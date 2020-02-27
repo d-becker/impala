@@ -147,6 +147,9 @@ const map<int64_t, std::string> LlvmCodeGen::cpu_flag_mappings_{
     {~(CpuInfo::AVX), "-avx"}, {~(CpuInfo::AVX2), "-avx2"},
     {~(CpuInfo::PCLMULQDQ), "-pclmul"}};
 
+CallableThreadPool LlvmCodeGen::async_codegen_thread_pool_(
+    "async_codegen_thread_pool", "async_codegen_thread_pool", 4, 8);
+
 [[noreturn]] static void LlvmCodegenHandleError(
     void* user_data, const string& reason, bool gen_crash_diag) {
   LOG(FATAL) << "LLVM hit fatal error: " << reason.c_str();
@@ -208,6 +211,9 @@ Status LlvmCodeGen::InitializeLlvm(const char* procname, bool load_backend) {
   // Initialize the global shared call graph.
   shared_call_graph_.Init(init_codegen->module_);
   init_codegen->Close();
+
+  // Initialize the async codegen thread pool.
+  RETURN_IF_ERROR(async_codegen_thread_pool_.Init());
   return Status::OK();
 }
 
@@ -524,7 +530,14 @@ LlvmCodeGen::~LlvmCodeGen() {
 }
 
 void LlvmCodeGen::Close() {
-  if (async_compile_thread_ != nullptr) async_compile_thread_->Join();
+  if (waiting_for_async_codegen_ != nullptr) {
+    waiting_for_async_codegen_->store(false);
+  }
+
+  std::unique_lock<std::mutex> lock;
+  if (async_codegen_ready_mutex_ != nullptr) {
+    lock = std::unique_lock<std::mutex>(*async_codegen_ready_mutex_);
+  }
 
   if (memory_manager_ != nullptr) {
     mem_tracker_->Release(memory_manager_->bytes_tracked());
@@ -1358,28 +1371,55 @@ Status LlvmCodeGen::FinalizeModule() {
 
 Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_sequence) {
   DCHECK(event_sequence != nullptr);
-  Status thread_start_status = Thread::Create("async-codegen", "async-codegen",
-      [this, event_sequence]() {
-        SCOPED_THREAD_COUNTER_MEASUREMENT(compile_thread_counters_);
-        VLOG(2) << "Starting async code generation.";
 
-        Status status = DebugAction(state_->query_options(),
-            "BEFORE_CODEGEN_IN_ASYNC_CODEGEN_THREAD");
-        if (status.ok()) {
-          status = this->FinalizeModule();
-        }
+  /// We use a local variable to make sure we can capture the shared pointer by value in
+  /// the lambda.
+  std::shared_ptr<std::atomic<bool>> waiting_for_async_codegen =
+      std::make_shared<std::atomic<bool>>(true);
+  waiting_for_async_codegen_ = waiting_for_async_codegen;
 
-        const std::string status_msg = status.ok() ? "OK." : status.msg().msg();
-        auto log_level = status.ok() ? 2 : 1;
-        event_sequence->MarkEvent("AsyncCodegenFinished");
-        VLOG(log_level) << "Finished async code generation with result: " << status;
-      }, &async_compile_thread_);
+  std::shared_ptr<std::mutex> async_codegen_ready_mutex =
+      std::make_shared<std::mutex>();
+  async_codegen_ready_mutex_ = async_codegen_ready_mutex;
 
-  event_sequence->MarkEvent("AsyncCodegenStarted");
+  auto func =
+      [this, waiting_for_async_codegen, async_codegen_ready_mutex, event_sequence]() {
+    std::lock_guard<std::mutex> lock(*async_codegen_ready_mutex);
+
+    if (!waiting_for_async_codegen->load()) {
+      VLOG(google::INFO) << "Async codegen no longer needed, skipping it.";
+      return;
+    }
+
+    event_sequence->MarkEvent("AsyncCodegenStarted");
+    VLOG(google::INFO) << "Starting async code generation.";
+
+    SCOPED_THREAD_COUNTER_MEASUREMENT(compile_thread_counters_);
+
+    /// TODO: Add DebugActions.
+    Status status = DebugAction(state_->query_options(),
+        "BEFORE_CODEGEN_IN_ASYNC_CODEGEN_THREAD");
+    if (status.ok()) {
+      status = this->FinalizeModule();
+    }
+
+    event_sequence->MarkEvent("AsyncCodegenFinished");
+    const std::string status_msg = status.ok() ? "OK." : status.msg().msg();
+    auto log_level = status.ok() ? google::INFO : google::WARNING;
+    VLOG(log_level) << "Finished async code generation with result: " << status;
+  };
+
+  const bool offer_success = async_codegen_thread_pool_.Offer(func);
+  if (offer_success) event_sequence->MarkEvent("AsyncCodegenEnqueued");
+
+  const Status threadpool_status = offer_success ?
+      Status::OK() : Status("Enqueuing codegen into threadpool queue failed");
+
+  VLOG(google::INFO) << "Enqueueing codegen: " << threadpool_status;
 
   RETURN_IF_ERROR(DebugAction(state_->query_options(),
         "AFTER_STARTING_ASYNC_CODEGEN_IN_FRAGMENT_THREAD"));
-  return thread_start_status;
+  return threadpool_status;
 }
 
 /// TODO: In asynchronous mode, return early if the query is cancelled or finished.

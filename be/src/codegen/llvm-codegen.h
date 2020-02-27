@@ -43,6 +43,7 @@
 #include "impala-ir/impala-ir-functions.h"
 #include "runtime/types.h"
 #include "util/runtime-profile.h"
+#include "util/thread-pool.h"
 
 /// Forward declare all llvm classes to avoid namespace pollution.
 namespace llvm {
@@ -884,7 +885,28 @@ class LlvmCodeGen {
   /// 'ir_generation_timer_' and hence is also updated by FragmentInstanceState.
   RuntimeProfile::ThreadCounters* llvm_thread_counters_;
 
-  std::unique_ptr<Thread> async_compile_thread_;
+  static CallableThreadPool async_codegen_thread_pool_;
+
+  /// Set to true before enqueueing an async codegen task to 'async_codegen_thread_pool_'
+  /// and set to false in 'Close'. If async codegen has not started when 'Close' is called
+  /// it will not be started at all. If it has started but not finished, we will wait for
+  /// it to finish because it is going to overwrite variables that would be freed if we
+  /// didn't wait for codegen to finish.
+  /// It needs to be dynamically allocated because it may outlive this LlvmCodeGen object
+  /// if codegen hasn't started by the time the query finishes. Allocated in
+  /// 'FinalizeModuleAsync'.
+  std::shared_ptr<std::atomic<bool>> waiting_for_async_codegen_;
+
+  /// A mutex that is acquired by the async codegen task when it starts and released when
+  /// it finishes. In 'Close' we also acquire this mutex which has the effect that 'Close'
+  /// blocks until codegen finishes (unless it hasn't started yet, in which case it will
+  /// exit immediately after starting because 'waiting_fot_async_codegen_' is set to
+  /// false. This is like joining the async codegen thread but we can't do that because it
+  /// is running in a thread pool.
+  /// It needs to be dynamically allocated because it may outlive this LlvmCodeGen object
+  /// if codegen hasn't started by the time the query finishes. Allocated in
+  /// 'FinalizeModuleAsync'.
+  std::shared_ptr<std::mutex> async_codegen_ready_mutex_;
 
   /// whether or not optimizations are enabled
   bool optimizations_enabled_;

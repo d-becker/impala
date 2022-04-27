@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "codegen/codegen-anyval-read-write-info.h"
 #include "codegen/impala-ir.h"
 #include "common/global-types.h"
 #include "common/status.h"
@@ -35,6 +36,7 @@
 namespace llvm {
   class Constant;
   class StructType;
+  class Type;
   class Value;
 };
 
@@ -171,6 +173,14 @@ class SlotDescriptor {
   void CodegenSetNullIndicator(LlvmCodeGen* codegen, LlvmBuilder* builder,
       llvm::Value* tuple, llvm::Value* is_null) const;
 
+  void CodegenWriteToSlot(const CodegenAnyValReadWriteInfo& read_write_info,
+      llvm::Value* tuple_llvm_struct_ptr,
+      llvm::Value* pool_val, llvm::BasicBlock* insert_before) const;
+
+  // TODO: Should be private?
+  static void CodegenStoreToNativePtr(const CodegenAnyValReadWriteInfo& read_write_info,
+      llvm::Value* raw_val_ptr, llvm::Value* pool_val);
+
   /// Returns true if this slot is a child of a struct slot.
   inline bool IsChildOfStruct() const;
  private:
@@ -206,6 +216,35 @@ class SlotDescriptor {
   static llvm::Value* CodegenGetNullByte(LlvmCodeGen* codegen, LlvmBuilder* builder,
       const NullIndicatorOffset& null_indicator_offset, llvm::Value* tuple,
       llvm::Value** null_byte_ptr);
+
+  void CodegenWriteToSlotHelper(const CodegenAnyValReadWriteInfo& read_write_info,
+      llvm::Value* main_tuple_llvm_struct_ptr, llvm::Value* tuple_llvm_struct_ptr,
+      llvm::Value* pool_val, llvm::BasicBlock* insert_before) const;
+
+  /// Stores a struct value into a native slot. This should only be used if this struct is
+  /// not null.
+  ///
+  /// 'main_tuple_ptr' should be a pointer to the beginning of the whole main tuple, while
+  /// 'struct_slot_ptr' should be the slot where the struct should be stored. The first
+  /// one is needed because the offsets of the struct's children are calculated from the
+  /// beginning of the main tuple.
+  void CodegenStoreStructToNativePtr(const CodegenAnyValReadWriteInfo& read_write_info,
+      llvm::Value* main_tuple_ptr, llvm::Value* struct_slot_ptr, llvm::Value* pool_val,
+      llvm::BasicBlock* insert_before) const;
+
+  // Sets the null indicator bit to 0 - recursively for structs.
+  void CodegenSetToNull(const CodegenAnyValReadWriteInfo& read_write_info,
+      llvm::Value* tuple) const;
+
+  /// Codegens writing a string or a collection to the address pointed to by 'slot_ptr'.
+  /// If 'pool_val' is non-NULL, the data will be copied into 'pool_val'.  'pool_val' has
+  /// to be of type MemPool*.
+  static void CodegenWriteStringOrCollectionToSlot(
+      const CodegenAnyValReadWriteInfo& read_write_info,
+      llvm::Value* slot_ptr, llvm::Value* pool_val);
+
+  static llvm::Value* CodegenToTimestampValue(
+      const CodegenAnyValReadWriteInfo& read_write_info);
 };
 
 class ColumnDescriptor {
@@ -530,6 +569,11 @@ class TupleDescriptor {
 
   /// Returns slots in their physical order.
   std::vector<SlotDescriptor*> SlotsOrderedByIdx() const;
+
+  std::pair<std::vector<llvm::Type*>, int> GetLlvmTypesAndOffset(LlvmCodeGen* codegen,
+      int curr_struct_offset) const;
+  llvm::StructType* CreateLlvmStructTypeFromFieldTypes(LlvmCodeGen* codegen,
+      const std::vector<llvm::Type*>& field_types, int parent_slot_offset) const;
 };
 
 class DescriptorTbl {

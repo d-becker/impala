@@ -60,8 +60,9 @@ add_library(Exprs
   ${MURMURHASH_SRC_DIR}/MurmurHash3.cpp
   null-literal.cc
   operators-ir.cc
-  scalar-expr.cc
   scalar-expr-evaluator.cc
+  scalar-expr-evaluator-ir.cc
+  scalar-expr.cc
   scalar-expr-ir.cc
   slot-ref.cc
   string-functions.cc

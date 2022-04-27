@@ -18,6 +18,7 @@
 #ifndef IMPALA_CODEGEN_CODEGEN_ANYVAL_H
 #define IMPALA_CODEGEN_CODEGEN_ANYVAL_H
 
+#include "codegen/codegen-anyval-read-write-info.h"
 #include "codegen/llvm-codegen.h"
 #include "runtime/descriptors.h"
 
@@ -50,6 +51,7 @@ namespace impala {
 /// TYPE_DOUBLE/DoubleVal: { i8, double }
 /// TYPE_STRING,TYPE_VARCHAR,TYPE_CHAR,TYPE_FIXED_UDA_INTERMEDIATE/StringVal: { i64, i8* }
 /// TYPE_ARRAY/TYPE_MAP/CollectionVal: { i64, i8* }
+/// TYPE_STRUCT/StructVal: { i64, i8* }
 /// TYPE_TIMESTAMP/TimestampVal: { i64, i64 }
 /// TYPE_DECIMAL/DecimalVal (isn't lowered):
 /// %"struct.impala_udf::DecimalVal" { {i8}, [15 x i8], {i128} }
@@ -59,6 +61,7 @@ namespace impala {
 /// - unit tests
 class CodegenAnyVal {
  public:
+  static const char* LLVM_ANYVAL_NAME;
   static const char* LLVM_BOOLEANVAL_NAME;
   static const char* LLVM_TINYINTVAL_NAME;
   static const char* LLVM_SMALLINTVAL_NAME;
@@ -107,6 +110,9 @@ class CodegenAnyVal {
   /// Returns the unlowered AnyVal pointer type associated with 'type'.
   /// E.g.: TYPE_BOOLEAN => %"struct.impala_udf::BooleanVal"*
   static llvm::PointerType* GetUnloweredPtrType(LlvmCodeGen* cg, const ColumnType& type);
+
+  /// Returns the pointer type to the AnyVal base class (AnyVal*).
+  static llvm::PointerType* GetAnyValPtrType(LlvmCodeGen* cg);
 
   /// Return the constant type-lowered value corresponding to a null *Val.
   /// E.g.: passing TYPE_DOUBLE (corresponding to the lowered DoubleVal { i8, double })
@@ -193,8 +199,13 @@ class CodegenAnyVal {
   /// unlowered type. This *Val should be non-null. The output variable is called 'name'.
   llvm::Value* GetUnloweredPtr(const std::string& name = "") const;
 
+  /// Stores this value in an alloca allocation, and returns the pointer, which has the
+  /// type 'AnyVal*'. This *Val should be non-null. The output variable is called 'name'.
+  llvm::Value* GetAnyValPtr(const std::string& name = "") const;
+
   /// Load this *Val's value from 'raw_val_ptr', which must be a pointer to the matching
   /// native type, e.g. a StringValue or TimestampValue slot in a tuple.
+  /// TODO: Delete this too?
   void LoadFromNativePtr(llvm::Value* raw_val_ptr);
 
   /// Stores this *Val's value into a native slot, e.g. a StringValue or TimestampValue.
@@ -203,8 +214,11 @@ class CodegenAnyVal {
   /// Not valid to call for FIXED_UDA_INTERMEDIATE: in that case the StringVal must be
   /// set up to point directly to the underlying slot, e.g. by LoadFromNativePtr().
   ///
+  /// Not valid to call for structs: call 'StoreStructToNativePtr' instead.
+  ///
   /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
   /// 'pool_val' has to be of type MemPool*.
+  /// TODO: Delete?
   void StoreToNativePtr(llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);
 
   /// Creates a pointer, e.g. StringValue* to an alloca() allocation with the
@@ -212,6 +226,7 @@ class CodegenAnyVal {
   ///
   /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
   /// 'pool_val' has to be of type MemPool*.
+  /// TODO: Delete?
   llvm::Value* ToNativePtr(llvm::Value* pool_val = nullptr);
 
   /// Writes this *Val's value to the appropriate slot in 'tuple' if non-null, or sets the
@@ -226,6 +241,7 @@ class CodegenAnyVal {
   ///
   /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
   /// 'pool_val' has to be of type MemPool*.
+  /// TODO: Delete?
   void WriteToSlot(const SlotDescriptor& slot_desc, llvm::Value* tuple,
       llvm::Value* pool_val, llvm::BasicBlock* insert_before = nullptr);
 
@@ -286,6 +302,10 @@ class CodegenAnyVal {
 
   LlvmCodeGen* codegen() const { return codegen_; }
 
+  static CodegenAnyVal CreateFromReadWriteInfo(const CodegenAnyValReadWriteInfo& read_write_info);
+
+  CodegenAnyValReadWriteInfo ToReadWriteInfo();
+
  private:
   ColumnType type_;
   llvm::Value* value_;
@@ -303,6 +323,16 @@ class CodegenAnyVal {
   /// Both 'dst' and 'src' should be integer types.
   llvm::Value* SetHighBits(int num_bits, llvm::Value* src, llvm::Value* dst,
                            const char* name = "");
+
+  // Returns the last block generated so we can set it as a predecessor in PHI nodes.
+  static llvm::BasicBlock* CreateStructValFromReadWriteInfo(
+      const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value** ptr,
+      llvm::Value** len, llvm::BasicBlock* struct_produce_value_block);
+
+  static void StructToReadWriteInfo(CodegenAnyValReadWriteInfo* read_write_info,
+      llvm::Value* children_ptr);
+  static void StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_write_info,
+      const ColumnType& type, llvm::Value* child_ptr);
 };
 
 }

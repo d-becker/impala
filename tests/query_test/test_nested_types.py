@@ -149,19 +149,23 @@ class TestNestedStructsInSelectList(ImpalaTestSuite):
 
   def test_struct_in_select_list(self, vector):
     """Queries where a struct column is in the select list"""
-    if vector.get_value('exec_option')['disable_codegen'] == 'False':
-      pytest.skip()
     new_vector = deepcopy(vector)
     new_vector.get_value('exec_option')['convert_legacy_hive_parquet_utc_timestamps'] = 1
     new_vector.get_value('exec_option')['TIMEZONE'] = '"Europe/Budapest"'
+    # TODO: Is it the good way to force codegen?
+    if new_vector.get_value('exec_option')['disable_codegen'] == 'False':
+      new_vector.get_value('exec_option')['disable_codegen_rows_threshold'] = 0
+      new_vector.get_value('exec_option')['exec_single_node_rows_threshold'] = 0
     self.run_test_case('QueryTest/struct-in-select-list', new_vector)
 
   def test_nested_struct_in_select_list(self, vector):
     """Queries where a nested struct column is in the select list"""
-    if vector.get_value('exec_option')['disable_codegen'] == 'False':
-      pytest.skip()
     new_vector = deepcopy(vector)
     new_vector.get_value('exec_option')['convert_legacy_hive_parquet_utc_timestamps'] = 1
+    # TODO: Is it the good way to force codegen?
+    if new_vector.get_value('exec_option')['disable_codegen'] == 'False':
+      new_vector.get_value('exec_option')['disable_codegen_rows_threshold'] = 0
+      new_vector.get_value('exec_option')['exec_single_node_rows_threshold'] = 0
     self.run_test_case('QueryTest/nested-struct-in-select-list', new_vector)
 
 

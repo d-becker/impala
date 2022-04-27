@@ -434,10 +434,6 @@ public class AnalyzeStmtsTest extends AnalyzerTest {
    */
   private void testSlotRefPath(String sql, List<Integer> expectedAbsPath) {
     AnalysisContext ctx = createAnalysisCtx();
-    // TODO: Turning Codegen OFF could be removed once the Codegen support is implemented
-    // for structs given in the select list.
-    ctx.getQueryOptions().setDisable_codegen(true);
-
     SelectStmt stmt = (SelectStmt) AnalyzesOk(sql, ctx);
     Expr e = stmt.getResultExprs().get(stmt.getResultExprs().size() - 1);
     Preconditions.checkState(e instanceof SlotRef);
@@ -1031,11 +1027,6 @@ public class AnalyzeStmtsTest extends AnalyzerTest {
 
     // Struct in select list works only if codegen is OFF.
     AnalysisContext ctx = createAnalysisCtx();
-    ctx.getQueryOptions().setDisable_codegen(false);
-    AnalysisError("select alltypes from functional_orc_def.complextypes_structs", ctx,
-        "Struct type in select list is not allowed when Codegen is ON. You might want " +
-        "to set DISABLE_CODEGEN=true");
-    ctx.getQueryOptions().setDisable_codegen(true);
     AnalyzesOk("select alltypes from functional_orc_def.complextypes_structs", ctx);
     AnalyzesOk("select int_array_col from functional.allcomplextypes");
     AnalyzesOk("select int_array_col from functional.allcomplextypes " +

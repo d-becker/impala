@@ -487,11 +487,6 @@ public class SelectStmt extends QueryStmt {
               "Expr '%s' in select list returns a map type '%s'.\n" +
               "Map type is not allowed in the select list.",
               expr.toSql(), expr.getType().toSql()));
-        } else if (expr.getType().isStructType()) {
-          if (!analyzer_.getQueryCtx().client_request.query_options.disable_codegen) {
-            throw new AnalysisException("Struct type in select list is not allowed " +
-                "when Codegen is ON. You might want to set DISABLE_CODEGEN=true");
-          }
         }
         if (!expr.getType().isSupported()) {
           throw new AnalysisException("Unsupported type '"

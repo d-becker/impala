@@ -18,6 +18,7 @@
 #ifndef IMPALA_EXPRS_SLOTREF_H
 #define IMPALA_EXPRS_SLOTREF_H
 
+#include "codegen/codegen-anyval.h"
 #include "exprs/scalar-expr.h"
 #include "runtime/descriptors.h"
 
@@ -78,12 +79,32 @@ class SlotRef : public ScalarExpr {
       ScalarExprEvaluator*, const TupleRow*) const override;
 
  private:
+  // TODO: We seem to codegen separately for the children as well. Solve the problem at
+  // the caller (impala::FragmentState::CodegenScalarExprs?)
+  CodegenAnyVal CodegenValue(LlvmCodeGen* codegen, LlvmBuilder* builder,
+      llvm::Function* fn, llvm::Value* eval_ptr, llvm::Value* row_ptr,
+      llvm::BasicBlock* entry_block = nullptr);
+  void CodegenNullChecking(LlvmCodeGen* codegen, LlvmBuilder* builder, llvm::Function* fn,
+      llvm::BasicBlock* next_block_if_null, llvm::BasicBlock* next_block_if_not_null,
+      llvm::Value* tuple_ptr);
+
   int tuple_idx_;  // within row
   int slot_offset_;  // within tuple
   NullIndicatorOffset null_indicator_offset_;  // within tuple
   const SlotId slot_id_;
   bool tuple_is_nullable_; // true if the tuple is nullable.
   const SlotDescriptor* slot_desc_ = nullptr;
+
+  CodegenAnyValReadWriteInfo CreateCodegenAnyValReadWriteInfo(LlvmCodeGen* codegen,
+      LlvmBuilder* builder,
+      llvm::Function* fn,
+      llvm::Value* eval_ptr,
+      llvm::Value* row_ptr,
+      llvm::BasicBlock* entry_block = nullptr);
+  CodegenAnyValReadWriteInfo CodegenReadSlot(LlvmCodeGen* codegen, LlvmBuilder* builder,
+      llvm::Value* eval_ptr, llvm::Value* row_ptr,
+      llvm::BasicBlock* null_block, llvm::BasicBlock* read_slot_block,
+      llvm::Value* tuple_ptr, llvm::Value* slot_offset);
 };
 
 }

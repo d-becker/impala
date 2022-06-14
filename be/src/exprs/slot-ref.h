@@ -95,6 +95,8 @@ class SlotRef : public ScalarExpr {
   bool tuple_is_nullable_; // true if the tuple is nullable.
   const SlotDescriptor* slot_desc_ = nullptr;
 
+  // After the function returns, the instruction point of the LlvmBuilder will be reset to
+  // where it was before the call.
   CodegenAnyValReadWriteInfo CreateCodegenAnyValReadWriteInfo(LlvmCodeGen* codegen,
       LlvmBuilder* builder,
       llvm::Function* fn,

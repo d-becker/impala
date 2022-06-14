@@ -808,9 +808,7 @@ void CodegenAnyVal::WriteToSlot(const SlotDescriptor& slot_desc, llvm::Value* tu
   // TODO: When this function is deleted, let the caller handle the insert point. Or maybe
   // 'ToReadWriteInfo' should reset the insert point, but in this case it should be the
   // same in SlotRef.
-  llvm::IRBuilderBase::InsertPoint ip = builder_->saveIP();
   CodegenAnyValReadWriteInfo read_write_info = ToReadWriteInfo();
-  builder_->restoreIP(ip);
   slot_desc.CodegenWriteToSlot(read_write_info, tuple_val, pool_val, insert_before);
 }
 
@@ -1215,6 +1213,8 @@ CodegenAnyVal CodegenAnyVal::CreateFromReadWriteInfo(
 }
 
 CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
+  llvm::IRBuilderBase::InsertPoint ip = builder_->saveIP();
+
   llvm::LLVMContext& context = codegen_->context();
   llvm::Function* fn = builder_->GetInsertBlock()->getParent();
 
@@ -1249,6 +1249,8 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
   res.entry_block = entry_block;
   res.null_block = null_block;
   res.non_null_block = non_null_block;
+
+  builder_->restoreIP(ip);
   return res;
 }
 

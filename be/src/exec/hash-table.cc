@@ -907,10 +907,7 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     llvm::Value* llvm_null_byte_loc = builder.CreateInBoundsGEP(
         NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
 
-    // TODO: Should we save the IP here or within 'result.ToReadWriteInfo()'?
-    llvm::IRBuilderBase::InsertPoint ip = builder.saveIP();
     CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
-    builder.restoreIP(ip);
     builder.CreateBr(rwi.entry_block);
 
     llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(context, "continue", *fn);

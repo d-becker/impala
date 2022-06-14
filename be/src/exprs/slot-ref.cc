@@ -409,6 +409,8 @@ CodegenAnyVal SlotRef::CodegenValue(LlvmCodeGen* codegen, LlvmBuilder* builder,
 CodegenAnyValReadWriteInfo SlotRef::CreateCodegenAnyValReadWriteInfo(
     LlvmCodeGen* codegen, LlvmBuilder* builder, llvm::Function* fn,
     llvm::Value* eval_ptr, llvm::Value* row_ptr, llvm::BasicBlock* entry_block) {
+  llvm::IRBuilderBase::InsertPoint ip = builder->saveIP();
+
   llvm::Value* tuple_offset = codegen->GetI32Constant(tuple_idx_);
   llvm::Value* slot_offset = codegen->GetI32Constant(slot_offset_);
 
@@ -446,6 +448,8 @@ CodegenAnyValReadWriteInfo SlotRef::CreateCodegenAnyValReadWriteInfo(
   CodegenAnyValReadWriteInfo res = CodegenReadSlot(codegen, builder, eval_ptr,
       row_ptr, null_block, read_slot_block, tuple_ptr, slot_offset);
   res.entry_block = entry_block;
+
+  builder->restoreIP(ip);
   return res;
 }
 

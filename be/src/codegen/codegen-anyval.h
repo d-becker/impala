@@ -304,6 +304,9 @@ class CodegenAnyVal {
 
   static CodegenAnyVal CreateFromReadWriteInfo(const CodegenAnyValReadWriteInfo& read_write_info);
 
+  // TODO: Document.
+  // After the function returns, the instruction point of the LlvmBuilder will be reset to
+  // where it was before the call.
   CodegenAnyValReadWriteInfo ToReadWriteInfo();
 
  private:

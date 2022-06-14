@@ -887,10 +887,6 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     llvm::Value* llvm_loc =
         builder.CreatePointerCast(loc, codegen->GetSlotPtrType(exprs[i]->type()), "loc");
 
-    llvm::BasicBlock* null_block = llvm::BasicBlock::Create(context, "null", *fn);
-    llvm::BasicBlock* not_null_block = llvm::BasicBlock::Create(context, "not_null", *fn);
-    llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(context, "continue", *fn);
-
     // Call expr
     llvm::Function* expr_fn;
     Status status = exprs[i]->GetCodegendComputeFn(codegen, false, &expr_fn);
@@ -908,17 +904,20 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     llvm::Value* eval_arg = codegen->CodegenArrayAt(&builder, eval_vector, i, "eval");
     CodegenAnyVal result = CodegenAnyVal::CreateCallWrapped(
         codegen, &builder, exprs[i]->type(), expr_fn, {eval_arg, row}, "result");
-    llvm::Value* is_null = result.GetIsNull();
-
-    // Set null-byte result
-    llvm::Value* null_byte = builder.CreateZExt(is_null, codegen->i8_type());
     llvm::Value* llvm_null_byte_loc = builder.CreateInBoundsGEP(
         NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
-    builder.CreateStore(null_byte, llvm_null_byte_loc);
-    builder.CreateCondBr(is_null, null_block, not_null_block);
+
+    // TODO: Should we save the IP here or within 'result.ToReadWriteInfo()'?
+    llvm::IRBuilderBase::InsertPoint ip = builder.saveIP();
+    CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
+    builder.restoreIP(ip);
+    builder.CreateBr(rwi.entry_block);
+
+    llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(context, "continue", *fn);
 
     // Null block
-    builder.SetInsertPoint(null_block);
+    builder.SetInsertPoint(rwi.null_block);
+    builder.CreateStore(codegen->GetI8Constant(1), llvm_null_byte_loc);
     if (!config.stores_nulls) {
       // hash table doesn't store nulls, no reason to keep evaluating exprs
       builder.CreateRet(codegen->true_value());
@@ -928,11 +927,13 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     }
 
     // Not null block
-    builder.SetInsertPoint(not_null_block);
+    builder.SetInsertPoint(rwi.non_null_block);
+    builder.CreateStore(codegen->GetI8Constant(0), llvm_null_byte_loc);
 
-    result.ConvertToCanonicalForm();
+    // TODO: Do it.
+    // result.ConvertToCanonicalForm();
 
-    result.StoreToNativePtr(llvm_loc);
+    SlotDescriptor::CodegenStoreToNativePtr(rwi, llvm_loc);
     builder.CreateBr(continue_block);
 
     // Continue block
@@ -941,10 +942,48 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
       // Update has_null
       llvm::PHINode* is_null_phi =
           builder.CreatePHI(codegen->bool_type(), 2, "is_null_phi");
-      is_null_phi->addIncoming(codegen->true_value(), null_block);
-      is_null_phi->addIncoming(codegen->false_value(), not_null_block);
+      is_null_phi->addIncoming(codegen->true_value(), rwi.null_block);
+      is_null_phi->addIncoming(codegen->false_value(), rwi.non_null_block);
       has_null = builder.CreateOr(has_null, is_null_phi, "has_null");
     }
+    // TODO.
+    // llvm::Value* is_null = result.GetIsNull();
+
+    // // Set null-byte result
+    // llvm::Value* null_byte = builder.CreateZExt(is_null, codegen->i8_type());
+    // llvm::Value* llvm_null_byte_loc = builder.CreateInBoundsGEP(
+    //     NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
+    // builder.CreateStore(null_byte, llvm_null_byte_loc);
+    // builder.CreateCondBr(is_null, null_block, not_null_block);
+
+    // // Null block
+    // builder.SetInsertPoint(null_block);
+    // if (!config.stores_nulls) {
+    //   // hash table doesn't store nulls, no reason to keep evaluating exprs
+    //   builder.CreateRet(codegen->true_value());
+    // } else {
+    //   CodegenAssignNullValue(codegen, &builder, llvm_loc, exprs[i]->type());
+    //   builder.CreateBr(continue_block);
+    // }
+
+    // // Not null block
+    // builder.SetInsertPoint(not_null_block);
+
+    // result.ConvertToCanonicalForm();
+
+    // result.StoreToNativePtr(llvm_loc);
+    // builder.CreateBr(continue_block);
+
+    // // Continue block
+    // builder.SetInsertPoint(continue_block);
+    // if (config.stores_nulls) {
+    //   // Update has_null
+    //   llvm::PHINode* is_null_phi =
+    //       builder.CreatePHI(codegen->bool_type(), 2, "is_null_phi");
+    //   is_null_phi->addIncoming(codegen->true_value(), null_block);
+    //   is_null_phi->addIncoming(codegen->false_value(), not_null_block);
+    //   has_null = builder.CreateOr(has_null, is_null_phi, "has_null");
+    // }
   }
   builder.CreateRet(has_null);
 

@@ -179,7 +179,7 @@ class SlotDescriptor {
 
   // TODO: Should be private?
   static void CodegenStoreToNativePtr(const CodegenAnyValReadWriteInfo& read_write_info,
-      llvm::Value* raw_val_ptr, llvm::Value* pool_val);
+      llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);
 
   /// Returns true if this slot is a child of a struct slot.
   inline bool IsChildOfStruct() const;

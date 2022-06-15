@@ -245,26 +245,6 @@ class CodegenAnyVal {
   void WriteToSlot(const SlotDescriptor& slot_desc, llvm::Value* tuple,
       llvm::Value* pool_val, llvm::BasicBlock* insert_before = nullptr);
 
-  /// Rewrites the bit values of a value in a canonical form.
-  /// Floating point values may be "NaN".  Nominally, NaN != NaN, but
-  /// for grouping purposes we want that to not be the case.
-  /// Therefore all NaN values need to be converted into a consistent
-  /// form where all bits are the same.  This method will do that -
-  /// ensure that all NaN values have the same bit pattern.
-  /// Similarly, -0 == +0 is handled here.
-  ///
-  /// Generically speaking, a canonical form of a value ensures that
-  /// all ambiguity is removed from a value's bit settings -- if there
-  /// are bits that can be freely changed without changing the logical
-  /// value of the value. (Currently this only has an impact for NaN
-  /// float and double values.)
-  void ConvertToCanonicalForm();
-
-  /// Replaces negative floating point zero with positive zero,
-  /// leaves everything else unchanged.
-  /// TODO: Moved to LlvmCodeGen?
-  llvm::Value* ConvertToPositiveZero(llvm::Value* val);
-
   /// Returns the i1 result of this == other. this and other must be non-null.
   llvm::Value* Eq(CodegenAnyVal* other);
 
@@ -302,6 +282,7 @@ class CodegenAnyVal {
       codegen_(nullptr), builder_(nullptr) {}
 
   LlvmCodeGen* codegen() const { return codegen_; }
+  const ColumnType& type() { return type_; }
 
   static CodegenAnyVal CreateFromReadWriteInfo(const CodegenAnyValReadWriteInfo& read_write_info);
 

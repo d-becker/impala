@@ -43,6 +43,7 @@ namespace llvm {
 
 namespace impala {
 
+class CodegenAnyVal;
 class LlvmCodeGen;
 class MemTracker;
 class RowDescriptor;
@@ -538,6 +539,27 @@ class HashTableCtx {
 
   /// Cross-compiled function to access member variables used in CodegenHashRow().
   uint32_t IR_ALWAYS_INLINE GetHashSeed() const;
+
+
+  /// Rewrites the bit values of a value in a canonical form. Floating point values may be
+  /// "NaN". Nominally, NaN != NaN, but for grouping purposes we want that to not be the
+  /// case. Therefore all NaN values need to be converted into a consistent form where all
+  /// bits are the same. This method will do that - ensure that all NaN values have the
+  /// same bit pattern. Similarly, -0 == +0 is handled here.
+  ///
+  /// Generically speaking, a canonical form of a value ensures that all ambiguity is
+  /// removed from a value's bit settings -- if there are bits that can be freely changed
+  /// without changing the logical value of the value. (Currently this only has an impact
+  /// for NaN float and double values.)
+  static llvm::Value* CodegenConvertToCanonicalForm(LlvmCodeGen* codegen,
+      LlvmBuilder* builder, const ColumnType& type, llvm::Value* val);
+  static void CodegenConvertToCanonicalForm(CodegenAnyValReadWriteInfo* read_write_info);
+  static void CodegenConvertToCanonicalForm(LlvmBuilder* builder, CodegenAnyVal* anyval);
+
+  /// Replaces negative floating point zero with positive zero, leaves everything else
+  /// unchanged.
+  static llvm::Value* CodegenConvertToPositiveZero(LlvmBuilder* builder,
+      llvm::Value* val);
 
   /// Functions to be replaced by codegen to specialize the hash table.
   bool IR_NO_INLINE stores_nulls() const { return stores_nulls_; }

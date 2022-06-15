@@ -764,6 +764,69 @@ static void CodegenAssignNullValue(LlvmCodeGen* codegen, LlvmBuilder* builder,
   }
 }
 
+llvm::Value* HashTableCtx::CodegenConvertToCanonicalForm(LlvmCodeGen* codegen,
+      LlvmBuilder* builder, const ColumnType& type, llvm::Value* val) {
+  // Convert the value to a bit pattern that is unambiguous.
+  // Specifically, for floating point type values, NaN values are converted to
+  // the same bit pattern, and -0 is converted to +0.
+  switch(type.type) {
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE: {
+      llvm::Value* canonical_val;
+      if (type.type == TYPE_FLOAT) {
+        canonical_val = llvm::ConstantFP::getNaN(codegen->float_type());
+      } else {
+        canonical_val = llvm::ConstantFP::getNaN(codegen->double_type());
+      }
+      DCHECK(val != nullptr);
+      llvm::Value* is_nan = builder->CreateFCmpUNO(val, val, "cmp_nan");
+
+      return builder->CreateSelect(is_nan, canonical_val,
+          CodegenConvertToPositiveZero(builder, val));
+    }
+    default:
+      return val;
+  }
+}
+
+void HashTableCtx::CodegenConvertToCanonicalForm(CodegenAnyValReadWriteInfo* read_write_info) {
+  // Convert the value to a bit pattern that is unambiguous.
+  // Specifically, for floating point type values, NaN values are converted to
+  // the same bit pattern, and -0 is converted to +0.
+  switch(read_write_info->type->type) {
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE: {
+      llvm::Value* new_val = CodegenConvertToCanonicalForm(read_write_info->codegen,
+          read_write_info->builder, *read_write_info->type, read_write_info->val);
+      read_write_info->val = new_val;
+    }
+    default:
+      ;
+  }
+}
+
+void HashTableCtx::CodegenConvertToCanonicalForm(LlvmBuilder* builder, CodegenAnyVal* anyval) {
+  switch(anyval->type().type) {
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE: {
+      llvm::Value* new_val = CodegenConvertToCanonicalForm(anyval->codegen(),
+          builder, anyval->type(), anyval->GetVal());
+      anyval->SetVal(new_val);
+    }
+    default:
+      ;
+  }
+}
+
+llvm::Value* HashTableCtx::CodegenConvertToPositiveZero(LlvmBuilder* builder,
+    llvm::Value* val) {
+  // Replaces negative zero with positive, leaves everything else unchanged.
+  llvm::Value* is_negative_zero = builder->CreateFCmpOEQ(
+      val, llvm::ConstantFP::getNegativeZero(val->getType()), "cmp_zero");
+  return builder->CreateSelect(is_negative_zero,
+                llvm::ConstantFP::get(val->getType(), 0.0), val);
+}
+
 // Codegen for evaluating a tuple row over either build_expr_evals_ or
 // probe_expr_evals_. For a group by with (big int, string) the IR looks like:
 //
@@ -928,10 +991,7 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     builder.CreateStore(codegen->GetI8Constant(0), llvm_null_byte_loc);
 
     // Convert to canonical value.
-    // TODO: Is it ok like this?.
-    if (rwi.val != nullptr) {
-      rwi.val = codegen->ConvertToCanonicalForm(&builder, *rwi.type, rwi.val);
-    }
+    CodegenConvertToCanonicalForm(&rwi);
 
     SlotDescriptor::CodegenStoreToNativePtr(rwi, llvm_loc);
     builder.CreateBr(continue_block);
@@ -946,44 +1006,6 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
       is_null_phi->addIncoming(codegen->false_value(), rwi.non_null_block);
       has_null = builder.CreateOr(has_null, is_null_phi, "has_null");
     }
-    // TODO.
-    // llvm::Value* is_null = result.GetIsNull();
-
-    // // Set null-byte result
-    // llvm::Value* null_byte = builder.CreateZExt(is_null, codegen->i8_type());
-    // llvm::Value* llvm_null_byte_loc = builder.CreateInBoundsGEP(
-    //     NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
-    // builder.CreateStore(null_byte, llvm_null_byte_loc);
-    // builder.CreateCondBr(is_null, null_block, not_null_block);
-
-    // // Null block
-    // builder.SetInsertPoint(null_block);
-    // if (!config.stores_nulls) {
-    //   // hash table doesn't store nulls, no reason to keep evaluating exprs
-    //   builder.CreateRet(codegen->true_value());
-    // } else {
-    //   CodegenAssignNullValue(codegen, &builder, llvm_loc, exprs[i]->type());
-    //   builder.CreateBr(continue_block);
-    // }
-
-    // // Not null block
-    // builder.SetInsertPoint(not_null_block);
-
-    // result.ConvertToCanonicalForm();
-
-    // result.StoreToNativePtr(llvm_loc);
-    // builder.CreateBr(continue_block);
-
-    // // Continue block
-    // builder.SetInsertPoint(continue_block);
-    // if (config.stores_nulls) {
-    //   // Update has_null
-    //   llvm::PHINode* is_null_phi =
-    //       builder.CreatePHI(codegen->bool_type(), 2, "is_null_phi");
-    //   is_null_phi->addIncoming(codegen->true_value(), null_block);
-    //   is_null_phi->addIncoming(codegen->false_value(), not_null_block);
-    //   has_null = builder.CreateOr(has_null, is_null_phi, "has_null");
-    // }
   }
   builder.CreateRet(has_null);
 
@@ -1318,7 +1340,7 @@ Status HashTableCtx::CodegenEquals(LlvmCodeGen* codegen, bool inclusive_equality
       llvm::Value* null_byte = builder.CreateLoad(llvm_null_byte_loc);
       row_is_null = builder.CreateICmpNE(null_byte, codegen->GetI8Constant(0));
     }
-    if (inclusive_equality) result.ConvertToCanonicalForm();
+    if (inclusive_equality) CodegenConvertToCanonicalForm(&builder, &result);
 
     // Get llvm value for row_val from 'expr_values'
     int offset = config.build_exprs_results_row_layout.expr_values_offsets[i];

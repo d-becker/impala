@@ -26,7 +26,7 @@ class Value;
 
 namespace impala {
 
-class ColumnType;
+struct ColumnType;
 class LlvmBuilder;
 class LlvmCodeGen;
 

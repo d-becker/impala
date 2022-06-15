@@ -569,49 +569,6 @@ void CodegenAnyVal::SetDate(llvm::Value* date) {
   value_ = builder_->CreateInsertValue(value_, v, 0, name_);
 }
 
-llvm::Value* CodegenAnyVal::ConvertToPositiveZero(llvm::Value* val) {
-  // TODO: Decide where it should be implemented.
-  // // Replaces negative zero with positive, leaves everything else unchanged.
-  // llvm::Value* is_negative_zero = builder_->CreateFCmpOEQ(
-  //     val, llvm::ConstantFP::getNegativeZero(val->getType()), "cmp_zero");
-  // return builder_->CreateSelect(is_negative_zero,
-  //               llvm::ConstantFP::get(val->getType(), 0.0), val);
-  return codegen_->ConvertToPositiveZero(builder_, val);
-}
-
-void CodegenAnyVal::ConvertToCanonicalForm() {
-  // TODO: Decide where it should be implemented.
-  // // Convert the value to a bit pattern that is unambiguous.
-  // // Specifically, for floating point type values, NaN values are converted to
-  // // the same bit pattern, and -0 is converted to +0.
-  // switch(type_.type) {
-  //   case TYPE_FLOAT:
-  //   case TYPE_DOUBLE: {
-  //     llvm::Value* raw = GetVal();
-  //     llvm::Value* canonical_val;
-  //     if (type_.type == TYPE_FLOAT) {
-  //       canonical_val = llvm::ConstantFP::getNaN(codegen_->float_type());
-  //     } else {
-  //       canonical_val = llvm::ConstantFP::getNaN(codegen_->double_type());
-  //     }
-  //     llvm::Value* is_nan = builder_->CreateFCmpUNO(raw, raw, "cmp_nan");
-
-  //     SetVal(builder_->CreateSelect(is_nan, canonical_val, ConvertToPositiveZero(raw)));
-  //     break;
-  //   }
-  //   default:
-  //     ;
-  // }
-  switch(type_.type) {
-    case TYPE_FLOAT:
-    case TYPE_DOUBLE: {
-      SetVal(codegen_->ConvertToCanonicalForm(builder_, type_, GetVal()));
-    }
-    default:
-      ;
-  }
-}
-
 llvm::Value* CodegenAnyVal::GetLoweredPtr(const string& name) const {
   llvm::Value* lowered_ptr =
       codegen_->CreateEntryBlockAlloca(*builder_, value_->getType(), name.c_str());

@@ -262,6 +262,7 @@ class CodegenAnyVal {
 
   /// Replaces negative floating point zero with positive zero,
   /// leaves everything else unchanged.
+  /// TODO: Moved to LlvmCodeGen?
   llvm::Value* ConvertToPositiveZero(llvm::Value* val);
 
   /// Returns the i1 result of this == other. this and other must be non-null.

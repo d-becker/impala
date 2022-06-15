@@ -927,8 +927,11 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     builder.SetInsertPoint(rwi.non_null_block);
     builder.CreateStore(codegen->GetI8Constant(0), llvm_null_byte_loc);
 
-    // TODO: Do it.
-    // result.ConvertToCanonicalForm();
+    // Convert to canonical value.
+    // TODO: Is it ok like this?.
+    if (rwi.val != nullptr) {
+      rwi.val = codegen->ConvertToCanonicalForm(&builder, *rwi.type, rwi.val);
+    }
 
     SlotDescriptor::CodegenStoreToNativePtr(rwi, llvm_loc);
     builder.CreateBr(continue_block);

@@ -1391,6 +1391,38 @@ void LlvmCodeGen::CodegenDebugTrace(
   builder->CreateCall(printf, calling_args);
 }
 
+llvm::Value* ConvertToPositiveZero(LlvmBuilder* builder, llvm::Value* val) {
+  // Replaces negative zero with positive, leaves everything else unchanged.
+  llvm::Value* is_negative_zero = builder->CreateFCmpOEQ(
+      val, llvm::ConstantFP::getNegativeZero(val->getType()), "cmp_zero");
+  return builder->CreateSelect(is_negative_zero,
+                llvm::ConstantFP::get(val->getType(), 0.0), val);
+}
+
+llvm::Value* LlvmCodeGen::ConvertToCanonicalForm(LlvmBuilder* builder,
+    const ColumnType& type, llvm::Value* val) {
+  // Convert the value to a bit pattern that is unambiguous.
+  // Specifically, for floating point type values, NaN values are converted to
+  // the same bit pattern, and -0 is converted to +0.
+  switch(type.type) {
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE: {
+      llvm::Value* canonical_val;
+      if (type.type == TYPE_FLOAT) {
+        canonical_val = llvm::ConstantFP::getNaN(float_type());
+      } else {
+        canonical_val = llvm::ConstantFP::getNaN(double_type());
+      }
+      llvm::Value* is_nan = builder->CreateFCmpUNO(val, val, "cmp_nan");
+
+      return builder->CreateSelect(is_nan, canonical_val,
+          ConvertToPositiveZero(builder, val));
+    }
+    default:
+      return val;
+  }
+}
+
 Status LlvmCodeGen::GetSymbols(const string& file, const string& module_id,
     unordered_set<string>* symbols) {
   ObjectPool pool;

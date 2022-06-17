@@ -24,9 +24,6 @@
 #include "runtime/raw-value.h"
 #include "common/names.h"
 
-// TODO: Remove.
-#include "llvm/Support/raw_os_ostream.h"
-
 using namespace impala;
 using namespace impala_udf;
 
@@ -652,61 +649,10 @@ void CodegenAnyVal::LoadFromNativePtr(llvm::Value* raw_val_ptr) {
   }
 }
 
-// TODO: Delete, this is only a temporary solution.
-void CodegenAnyVal::StoreToNativePtr(llvm::Value* raw_val_ptr, llvm::Value* pool_val) {
-  CodegenAnyValReadWriteInfo rwi;
-  rwi.type = &type_;
-  rwi.codegen = codegen_;
-  rwi.builder = builder_;
-  switch (type_.type) {
-    case TYPE_STRING:
-    case TYPE_VARCHAR:
-    case TYPE_ARRAY: { // CollectionVal has same memory layout as StringVal.
-      rwi.len = GetLen();
-      rwi.ptr = GetPtr();
-      break;
-    }
-    case TYPE_CHAR:
-      codegen_->CodegenMemcpy(builder_, raw_val_ptr, GetPtr(), type_.len);
-      rwi.len = codegen_->GetI32Constant(type_.len);
-      rwi.ptr = GetPtr();
-      break;
-    case TYPE_FIXED_UDA_INTERMEDIATE:
-      DCHECK(false) << "FIXED_UDA_INTERMEDIATE does not need to be copied: the "
-                    << "StringVal must be set up to point to the output slot";
-      break;
-    case TYPE_TIMESTAMP: {
-      rwi.time_of_day = GetTimeOfDay();
-      rwi.date = GetDate();
-      break;
-    }
-    case TYPE_BOOLEAN:
-    case TYPE_TINYINT:
-    case TYPE_SMALLINT:
-    case TYPE_INT:
-    case TYPE_BIGINT:
-    case TYPE_FLOAT:
-    case TYPE_DOUBLE:
-    case TYPE_DECIMAL:
-    case TYPE_DATE:
-      // The representations of the types match - just store the value.
-      rwi.val = GetVal();
-      break;
-    case TYPE_STRUCT:
-      DCHECK(false) << "Invalid type for this function. "
-                    << "Call 'StoreStructToNativePtr()' instead.";
-    default:
-      DCHECK(false) << "NYI: " << type_.DebugString();
-      break;
-  }
-
-  SlotDescriptor::CodegenStoreToNativePtr(rwi, raw_val_ptr, pool_val);
-}
-
 llvm::Value* CodegenAnyVal::ToNativePtr(llvm::Value* pool_val) {
   llvm::Value* native_ptr = codegen_->CreateEntryBlockAlloca(*builder_,
       codegen_->GetSlotType(type_));
-  StoreToNativePtr(native_ptr, pool_val);
+  SlotDescriptor::CodegenStoreToNativePtr(*this, native_ptr, pool_val);
   return native_ptr;
 }
 
@@ -735,6 +681,7 @@ llvm::Value* CodegenAnyVal::ToNativePtr(llvm::Value* pool_val) {
 //   ; [insert point ends here]
 //
 // TODO: Delete?
+// TODO: Update example IR.
 void CodegenAnyVal::WriteToSlot(const SlotDescriptor& slot_desc, llvm::Value* tuple_val,
     llvm::Value* pool_val, llvm::BasicBlock* insert_before) {
   // DCHECK(tuple_val->getType()->isPointerTy());
@@ -1192,7 +1139,6 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
   res.builder = builder_;
   res.type = &type_;
 
-  // TODO:Should we use 'insert_before'?.
   llvm::BasicBlock* entry_block = llvm::BasicBlock::Create(context, "entry", fn);
   builder_->SetInsertPoint(entry_block);
 
@@ -1262,14 +1208,12 @@ void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_
     case TYPE_TIMESTAMP: {
       llvm::Value* time_of_day_addr = builder->CreateStructGEP(
           nullptr, cast_child_ptr, 0, "time_of_day_addr");
-      // TODO: Is it ok?
       llvm::Value* time_of_day_addr_lowered = builder->CreateBitCast(
           time_of_day_addr, codegen->i64_ptr_type(), "time_of_day_addr");
       read_write_info->time_of_day = builder->CreateLoad(time_of_day_addr_lowered, "time_of_day");
 
       llvm::Value* date_addr = builder->CreateStructGEP(
           nullptr, cast_child_ptr, 1, "date_addr");
-      // TODO: Is it ok?
       llvm::Value* date_addr_lowered = builder->CreateBitCast(
           date_addr, codegen->i32_ptr_type(), "date_addr_lowered");
       read_write_info->date = builder->CreateLoad(date_addr_lowered, "date");

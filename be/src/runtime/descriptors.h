@@ -42,6 +42,7 @@ namespace llvm {
 
 namespace impala {
 
+class CodegenAnyVal;
 class LlvmBuilder;
 class LlvmCodeGen;
 class ObjectPool;
@@ -177,6 +178,18 @@ class SlotDescriptor {
       llvm::Value* tuple_llvm_struct_ptr,
       llvm::Value* pool_val, llvm::BasicBlock* insert_before) const;
 
+  /// Stores this 'any_val' into a native slot, e.g. a StringValue or TimestampValue.
+  /// This should only be used if 'any_val' is not null.
+  ///
+  /// Not valid to call for FIXED_UDA_INTERMEDIATE: in that case the StringVal must be
+  /// set up to point directly to the underlying slot, e.g. by LoadFromNativePtr().
+  ///
+  /// Not valid to call for structs.
+  ///
+  /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
+  /// 'pool_val' has to be of type MemPool*.
+  static void CodegenStoreToNativePtr(CodegenAnyVal& any_val,
+      llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);
   // TODO: Should be private?
   static void CodegenStoreToNativePtr(const CodegenAnyValReadWriteInfo& read_write_info,
       llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);

@@ -208,19 +208,6 @@ class CodegenAnyVal {
   /// TODO: Delete this too?
   void LoadFromNativePtr(llvm::Value* raw_val_ptr);
 
-  /// Stores this *Val's value into a native slot, e.g. a StringValue or TimestampValue.
-  /// This should only be used if this *Val is not null.
-  ///
-  /// Not valid to call for FIXED_UDA_INTERMEDIATE: in that case the StringVal must be
-  /// set up to point directly to the underlying slot, e.g. by LoadFromNativePtr().
-  ///
-  /// Not valid to call for structs: call 'StoreStructToNativePtr' instead.
-  ///
-  /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
-  /// 'pool_val' has to be of type MemPool*.
-  /// TODO: Delete?
-  void StoreToNativePtr(llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);
-
   /// Creates a pointer, e.g. StringValue* to an alloca() allocation with the
   /// equivalent of this value. This should only be used if this Val is not null.
   ///
@@ -282,6 +269,7 @@ class CodegenAnyVal {
       codegen_(nullptr), builder_(nullptr) {}
 
   LlvmCodeGen* codegen() const { return codegen_; }
+  LlvmBuilder* builder() const { return builder_; }
   const ColumnType& type() { return type_; }
 
   static CodegenAnyVal CreateFromReadWriteInfo(const CodegenAnyValReadWriteInfo& read_write_info);

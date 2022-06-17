@@ -25,6 +25,7 @@
 #include <llvm/ExecutionEngine/ExecutionEngine.h>
 #include <llvm/IR/DataLayout.h>
 
+#include "codegen/codegen-anyval.h"
 #include "codegen/llvm-codegen.h"
 #include "common/object-pool.h"
 #include "common/status.h"
@@ -839,6 +840,64 @@ void SlotDescriptor::CodegenStoreStructToNativePtr(
         struct_slot_ptr, pool_val, next_block);
   }
 }
+
+void SlotDescriptor::CodegenStoreToNativePtr(CodegenAnyVal& any_val,
+      llvm::Value* raw_val_ptr, llvm::Value* pool_val) {
+  // Create a 'CodegenAnyValReadWriteInfo' but without creating basic blocks for null
+  // handling as this function should only be called if we assume that the value is not
+  // null.
+  CodegenAnyValReadWriteInfo rwi;
+  rwi.type = &any_val.type();
+  rwi.codegen = any_val.codegen();
+  rwi.builder = any_val.builder();
+  switch (rwi.type->type) {
+    case TYPE_STRING:
+    case TYPE_VARCHAR:
+    case TYPE_ARRAY: { // CollectionVal has same memory layout as StringVal.
+      rwi.len = any_val.GetLen();
+      rwi.ptr = any_val.GetPtr();
+      break;
+    }
+    case TYPE_CHAR:
+      // TODO: Do we need this memcpy?
+      // TODO: Probably delete it.
+      rwi.codegen->CodegenMemcpy(rwi.builder, raw_val_ptr,
+          any_val.GetPtr(), rwi.type->len);
+      rwi.len = rwi.codegen->GetI32Constant(rwi.type->len);
+      rwi.ptr = any_val.GetPtr();
+      break;
+    case TYPE_FIXED_UDA_INTERMEDIATE:
+      DCHECK(false) << "FIXED_UDA_INTERMEDIATE does not need to be copied: the "
+                    << "StringVal must be set up to point to the output slot";
+      break;
+    case TYPE_TIMESTAMP: {
+      rwi.time_of_day = any_val.GetTimeOfDay();
+      rwi.date = any_val.GetDate();
+      break;
+    }
+    case TYPE_BOOLEAN:
+    case TYPE_TINYINT:
+    case TYPE_SMALLINT:
+    case TYPE_INT:
+    case TYPE_BIGINT:
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE:
+    case TYPE_DECIMAL:
+    case TYPE_DATE:
+      // The representations of the types match - just store the value.
+      rwi.val = any_val.GetVal();
+      break;
+    case TYPE_STRUCT:
+      DCHECK(false) << "Invalid type for this function. "
+                    << "Call 'StoreStructToNativePtr()' instead.";
+    default:
+      DCHECK(false) << "NYI: " << rwi.type->DebugString();
+      break;
+  }
+
+  CodegenStoreToNativePtr(rwi, raw_val_ptr, pool_val);
+}
+
 
 void SlotDescriptor::CodegenStoreToNativePtr(
     const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value* raw_val_ptr,

@@ -173,6 +173,8 @@ void FilterContext::MaterializeValues() const {
 //       %"struct.impala::ColumnType"* @expr_type_arg)
 //   ret i1 %passed_filter
 // }
+// TODO: Update example.
+// TODO; Fix crash, see what changed in the IR with the new implementation.
 Status FilterContext::CodegenEval(
     LlvmCodeGen* codegen, ScalarExpr* filter_expr, llvm::Function** fn) {
   llvm::LLVMContext& context = codegen->context();
@@ -190,13 +192,6 @@ Status FilterContext::CodegenEval(
   llvm::Function* eval_filter_fn = prototype.GeneratePrototype(&builder, args);
   llvm::Value* this_arg = args[0];
   llvm::Value* row_arg = args[1];
-
-  llvm::BasicBlock* not_null_block =
-      llvm::BasicBlock::Create(context, "not_null", eval_filter_fn);
-  llvm::BasicBlock* is_null_block =
-      llvm::BasicBlock::Create(context, "is_null", eval_filter_fn);
-  llvm::BasicBlock* eval_filter_block =
-      llvm::BasicBlock::Create(context, "eval_filter", eval_filter_fn);
 
   llvm::Function* compute_fn;
   RETURN_IF_ERROR(filter_expr->GetCodegendComputeFn(codegen, false, &compute_fn));
@@ -217,17 +212,18 @@ Status FilterContext::CodegenEval(
   CodegenAnyVal result = CodegenAnyVal::CreateCallWrapped(codegen, &builder,
       filter_expr->type(), compute_fn, compute_fn_args, "result");
 
-  // Check if the result is NULL
-  llvm::Value* is_null = result.GetIsNull();
-  builder.CreateCondBr(is_null, is_null_block, not_null_block);
+  CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
+
+  llvm::BasicBlock* eval_filter_block =
+      llvm::BasicBlock::Create(context, "eval_filter", eval_filter_fn);
 
   // Set the pointer to NULL in case it evaluates to NULL.
-  builder.SetInsertPoint(is_null_block);
+  builder.SetInsertPoint(rwi.null_block);
   llvm::Value* null_ptr = codegen->null_ptr_value();
   builder.CreateBr(eval_filter_block);
 
   // Saves 'result' on the stack and passes a pointer to it to 'runtime_filter_fn'.
-  builder.SetInsertPoint(not_null_block);
+  builder.SetInsertPoint(rwi.non_null_block);
   llvm::Value* native_ptr = result.ToNativePtr();
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(eval_filter_block);
@@ -235,8 +231,8 @@ Status FilterContext::CodegenEval(
   // Get the arguments in place to call 'runtime_filter_fn' to see if the row passes.
   builder.SetInsertPoint(eval_filter_block);
   llvm::PHINode* val_ptr_phi = builder.CreatePHI(codegen->ptr_type(), 2, "val_ptr_phi");
-  val_ptr_phi->addIncoming(native_ptr, not_null_block);
-  val_ptr_phi->addIncoming(null_ptr, is_null_block);
+  val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block);
+  val_ptr_phi->addIncoming(null_ptr, rwi.null_block);
 
   // Create a global constant of the filter expression's ColumnType. It needs to be a
   // constant for constant propagation and dead code elimination in 'runtime_filter_fn'.

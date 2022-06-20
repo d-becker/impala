@@ -132,38 +132,42 @@ void FilterContext::MaterializeValues() const {
   }
 }
 
-// An example of the generated code for TPCH-Q2: RF002 -> n_regionkey
+// An example of the generated code for the following query:
 //
-// @expr_type_arg = constant %"struct.impala::ColumnType" { i32 4, i32 -1, i32 -1,
-//     i32 -1, %"class.std::vector.422" zeroinitializer,
-//     %"class.std::vector.101" zeroinitializer }
+// select a.outer_struct, b.small_struct
+// from functional_orc_def.complextypes_nested_structs a
+//     inner join functional_orc_def.complextypes_structs b
+//     on b.small_struct.i = a.outer_struct.inner_struct2.i + 19091;
 //
-// ; Function Attrs: alwaysinline
 // define i1 @FilterContextEval(%"struct.impala::FilterContext"* %this,
-//                              %"class.impala::TupleRow"* %row) #41 {
+//     %"class.impala::TupleRow"* %row) #50 {
 // entry:
-//   %0 = alloca i16
+//   %0 = alloca i64
 //   %expr_eval_ptr = getelementptr inbounds %"struct.impala::FilterContext",
 //       %"struct.impala::FilterContext"* %this, i32 0, i32 0
 //   %expr_eval_arg = load %"class.impala::ScalarExprEvaluator"*,
 //       %"class.impala::ScalarExprEvaluator"** %expr_eval_ptr
-//   %result = call i32 @GetSlotRef(%"class.impala::ScalarExprEvaluator"* %expr_eval_arg,
+//   %result = call { i8, i64 } @"impala::Operators::Add_BigIntVal_BigIntValWrapper"(
+//       %"class.impala::ScalarExprEvaluator"* %expr_eval_arg,
 //       %"class.impala::TupleRow"* %row)
-//   %is_null1 = trunc i32 %result to i1
-//   br i1 %is_null1, label %is_null, label %not_null
+//   br label %entry1
 //
-// not_null:                                         ; preds = %entry
-//   %1 = ashr i32 %result, 16
-//   %2 = trunc i32 %1 to i16
-//   store i16 %2, i16* %0
-//   %native_ptr = bitcast i16* %0 to i8*
+// entry1:                                           ; preds = %entry
+//   %1 = extractvalue { i8, i64 } %result, 0
+//   %is_null = trunc i8 %1 to i1
+//   br i1 %is_null, label %null, label %non_null
+//
+// non_null:                                         ; preds = %entry1
+//   %val = extractvalue { i8, i64 } %result, 1
+//   store i64 %val, i64* %0
+//   %native_ptr = bitcast i64* %0 to i8*
 //   br label %eval_filter
 //
-// is_null:                                          ; preds = %entry
+// null:                                             ; preds = %entry1
 //   br label %eval_filter
 //
-// eval_filter:                                      ; preds = %not_null, %is_null
-//   %val_ptr_phi = phi i8* [ %native_ptr, %not_null ], [ null, %is_null ]
+// eval_filter:                                      ; preds = %non_null, %null
+//   %val_ptr_phi = phi i8* [ %native_ptr, %non_null ], [ null, %null ]
 //   %filter_ptr = getelementptr inbounds %"struct.impala::FilterContext",
 //       %"struct.impala::FilterContext"* %this, i32 0, i32 1
 //   %filter_arg = load %"class.impala::RuntimeFilter"*,
@@ -173,8 +177,6 @@ void FilterContext::MaterializeValues() const {
 //       %"struct.impala::ColumnType"* @expr_type_arg)
 //   ret i1 %passed_filter
 // }
-// TODO: Update example.
-// TODO; Fix crash, see what changed in the IR with the new implementation.
 Status FilterContext::CodegenEval(
     LlvmCodeGen* codegen, ScalarExpr* filter_expr, llvm::Function** fn) {
   llvm::LLVMContext& context = codegen->context();
@@ -213,6 +215,9 @@ Status FilterContext::CodegenEval(
       filter_expr->type(), compute_fn, compute_fn_args, "result");
 
   CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
+  // TODO: If the next line is omitted and *fn == nullptr, we end up crashing instead of
+  // returning an error.
+  builder.CreateBr(rwi.entry_block);
 
   llvm::BasicBlock* eval_filter_block =
       llvm::BasicBlock::Create(context, "eval_filter", eval_filter_fn);
@@ -224,7 +229,7 @@ Status FilterContext::CodegenEval(
 
   // Saves 'result' on the stack and passes a pointer to it to 'runtime_filter_fn'.
   builder.SetInsertPoint(rwi.non_null_block);
-  llvm::Value* native_ptr = result.ToNativePtr();
+  llvm::Value* native_ptr = SlotDescriptor::CodegenToNewNativePtr(rwi);
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(eval_filter_block);
 
@@ -533,6 +538,7 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
 
   // Saves 'result' on the stack and passes a pointer to it to Insert().
   builder.SetInsertPoint(val_not_null_block);
+  // TODO: New api.
   llvm::Value* native_ptr = result.ToNativePtr();
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(insert_filter_block);

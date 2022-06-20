@@ -194,6 +194,15 @@ class SlotDescriptor {
   static void CodegenStoreToNativePtr(const CodegenAnyValReadWriteInfo& read_write_info,
       llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);
 
+  /// Creates a pointer, e.g. StringValue* to an alloca() allocation and stores the
+  /// contents of 'read_write_info' to it. This should only be used if 'read_write_info'
+  /// holds a non-null value.
+  ///
+  /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
+  /// 'pool_val' has to be of type MemPool*.
+  static llvm::Value* CodegenToNewNativePtr(
+      const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value* pool_val = nullptr);
+
   /// Returns true if this slot is a child of a struct slot.
   inline bool IsChildOfStruct() const;
  private:

@@ -952,6 +952,15 @@ void SlotDescriptor::CodegenStoreToNativePtr(
   }
 }
 
+llvm::Value* SlotDescriptor::CodegenToNewNativePtr(
+      const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value* pool_val) {
+  LlvmCodeGen* codegen = read_write_info.codegen;
+  llvm::Value* native_ptr = codegen->CreateEntryBlockAlloca(*read_write_info.builder,
+      codegen->GetSlotType(*read_write_info.type));
+  SlotDescriptor::CodegenStoreToNativePtr(read_write_info, native_ptr, pool_val);
+  return native_ptr;
+}
+
 void SlotDescriptor::CodegenSetToNull(const CodegenAnyValReadWriteInfo& read_write_info,
     llvm::Value* tuple) const {
   LlvmCodeGen* codegen = read_write_info.codegen;

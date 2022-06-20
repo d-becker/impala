@@ -505,13 +505,6 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
   }
   builder.SetInsertPoint(check_val_block);
 
-  // Check null on the input value 'val' to be computed first
-  llvm::BasicBlock* val_not_null_block =
-      llvm::BasicBlock::Create(context, "val_not_null", insert_filter_fn);
-  llvm::BasicBlock* val_is_null_block =
-      llvm::BasicBlock::Create(context, "val_is_null", insert_filter_fn);
-  llvm::BasicBlock* insert_filter_block =
-      llvm::BasicBlock::Create(context, "insert_filter", insert_filter_fn);
 
   llvm::Function* compute_fn;
   RETURN_IF_ERROR(filter_expr->GetCodegendComputeFn(codegen, false, &compute_fn));
@@ -527,27 +520,28 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
   CodegenAnyVal result = CodegenAnyVal::CreateCallWrapped(
       codegen, &builder, filter_expr->type(), compute_fn, compute_fn_args, "result");
 
-  // Check if the result is NULL
-  llvm::Value* val_is_null = result.GetIsNull();
-  builder.CreateCondBr(val_is_null, val_is_null_block, val_not_null_block);
+  CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
+  builder.CreateBr(rwi.entry_block);
+
+  llvm::BasicBlock* insert_filter_block =
+      llvm::BasicBlock::Create(context, "insert_filter", insert_filter_fn);
 
   // Set the pointer to NULL in case it evaluates to NULL.
-  builder.SetInsertPoint(val_is_null_block);
+  builder.SetInsertPoint(rwi.null_block);
   llvm::Value* null_ptr = codegen->null_ptr_value();
   builder.CreateBr(insert_filter_block);
 
   // Saves 'result' on the stack and passes a pointer to it to Insert().
-  builder.SetInsertPoint(val_not_null_block);
-  // TODO: New api.
-  llvm::Value* native_ptr = result.ToNativePtr();
+  builder.SetInsertPoint(rwi.non_null_block);
+  llvm::Value* native_ptr = SlotDescriptor::CodegenToNewNativePtr(rwi);
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(insert_filter_block);
 
   // Get the arguments in place to call Insert().
   builder.SetInsertPoint(insert_filter_block);
   llvm::PHINode* val_ptr_phi = builder.CreatePHI(codegen->ptr_type(), 2, "val_ptr_phi");
-  val_ptr_phi->addIncoming(native_ptr, val_not_null_block);
-  val_ptr_phi->addIncoming(null_ptr, val_is_null_block);
+  val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block);
+  val_ptr_phi->addIncoming(null_ptr, rwi.null_block);
 
   // Insert into the bloom filter.
   if (filter_desc.type == TRuntimeFilterType::BLOOM) {

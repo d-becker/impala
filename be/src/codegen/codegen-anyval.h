@@ -208,14 +208,6 @@ class CodegenAnyVal {
   /// TODO: Delete this too?
   void LoadFromNativePtr(llvm::Value* raw_val_ptr);
 
-  /// Creates a pointer, e.g. StringValue* to an alloca() allocation with the
-  /// equivalent of this value. This should only be used if this Val is not null.
-  ///
-  /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
-  /// 'pool_val' has to be of type MemPool*.
-  /// TODO: Delete?
-  llvm::Value* ToNativePtr(llvm::Value* pool_val = nullptr);
-
   /// Writes this *Val's value to the appropriate slot in 'tuple' if non-null, or sets the
   /// appropriate null bit if null. This assumes null bits are initialized to 0. Analogous
   /// to RawValue::Write(void* value, Tuple*, SlotDescriptor*, MemPool*). 'tuple' should

@@ -649,13 +649,6 @@ void CodegenAnyVal::LoadFromNativePtr(llvm::Value* raw_val_ptr) {
   }
 }
 
-llvm::Value* CodegenAnyVal::ToNativePtr(llvm::Value* pool_val) {
-  llvm::Value* native_ptr = codegen_->CreateEntryBlockAlloca(*builder_,
-      codegen_->GetSlotType(type_));
-  SlotDescriptor::CodegenStoreToNativePtr(*this, native_ptr, pool_val);
-  return native_ptr;
-}
-
 // Example output for materializing an int slot:
 //
 //   ; [insert point starts here]
@@ -819,9 +812,9 @@ llvm::Value* CodegenAnyVal::EqToNativePtr(llvm::Value* native_ptr,
 
 llvm::Value* CodegenAnyVal::Compare(CodegenAnyVal* other, const char* name) {
   DCHECK_EQ(type_, other->type_);
-  llvm::Value* v1 = ToNativePtr();
+  llvm::Value* v1 = SlotDescriptor::CodegenToNewNativePtr(*this);
   llvm::Value* void_v1 = builder_->CreateBitCast(v1, codegen_->ptr_type());
-  llvm::Value* v2 = other->ToNativePtr();
+  llvm::Value* v2 = SlotDescriptor::CodegenToNewNativePtr(*other);
   llvm::Value* void_v2 = builder_->CreateBitCast(v2, codegen_->ptr_type());
   // Create a global constant of the values' ColumnType. It needs to be a constant
   // for constant propagation and dead code elimination in 'compare_fn'.

@@ -202,6 +202,8 @@ class SlotDescriptor {
   /// 'pool_val' has to be of type MemPool*.
   static llvm::Value* CodegenToNewNativePtr(
       const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value* pool_val = nullptr);
+  static llvm::Value* CodegenToNewNativePtr(
+      CodegenAnyVal& any_val, llvm::Value* pool_val = nullptr);
 
   /// Returns true if this slot is a child of a struct slot.
   inline bool IsChildOfStruct() const;

@@ -291,7 +291,6 @@ Status HiveUdfCall::CodegenEvalChildren(LlvmCodeGen* codegen, LlvmBuilder* build
 
      // Insert storing the null byte in 'rwi.entry_block' before the branch instruction.
      builder->SetInsertPoint(rwi.entry_block->getTerminator());
-
      llvm::Value* const child_is_null_i8 = builder->CreateZExtOrTrunc(
          rwi.is_null, codegen->i8_type(), "child_is_null_i8");
      builder->CreateCall(set_input_null_buff_elem_fn,

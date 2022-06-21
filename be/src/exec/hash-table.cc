@@ -898,6 +898,7 @@ llvm::Value* HashTableCtx::CodegenConvertToPositiveZero(LlvmBuilder* builder,
 // Both the null and not null branch into the continue block.  The continue block
 // becomes the start of the next block for codegen (either the next expr or just the
 // end of the function).
+// TODO: Update example.
 Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     const HashTableConfig& config, llvm::Function** fn) {
   const std::vector<ScalarExpr*>& exprs =
@@ -967,17 +968,22 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     llvm::Value* eval_arg = codegen->CodegenArrayAt(&builder, eval_vector, i, "eval");
     CodegenAnyVal result = CodegenAnyVal::CreateCallWrapped(
         codegen, &builder, exprs[i]->type(), expr_fn, {eval_arg, row}, "result");
-    llvm::Value* llvm_null_byte_loc = builder.CreateInBoundsGEP(
-        NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
 
     CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
     builder.CreateBr(rwi.entry_block);
+
+    // Insert storing the null byte in 'rwi.entry_block' before the branch instruction.
+    builder.SetInsertPoint(rwi.entry_block->getTerminator());
+    llvm::Value* llvm_null_byte_loc = builder.CreateInBoundsGEP(
+        NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
+    DCHECK(rwi.is_null != nullptr);
+    llvm::Value* null_byte = builder.CreateZExt(rwi.is_null, codegen->i8_type());
+    builder.CreateStore(null_byte, llvm_null_byte_loc);
 
     llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(context, "continue", *fn);
 
     // Null block
     builder.SetInsertPoint(rwi.null_block);
-    builder.CreateStore(codegen->GetI8Constant(1), llvm_null_byte_loc);
     if (!config.stores_nulls) {
       // hash table doesn't store nulls, no reason to keep evaluating exprs
       builder.CreateRet(codegen->true_value());
@@ -988,7 +994,6 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
 
     // Not null block
     builder.SetInsertPoint(rwi.non_null_block);
-    builder.CreateStore(codegen->GetI8Constant(0), llvm_null_byte_loc);
 
     // Convert to canonical value.
     CodegenConvertToCanonicalForm(&rwi);

@@ -266,6 +266,7 @@ void SlotRef::CodegenNullChecking(LlvmCodeGen* codegen, LlvmBuilder* builder,
         codegen, builder, null_indicator_offset_, tuple_ptr);
     builder->CreateCondBr(is_slot_null, next_block_if_null, next_block_if_not_null);
   }
+  // TODO: Fill the is_null field of the ReadWriteInfo.
 }
 
 // Codegens reading the members of a StringVal or a CollectionVal from the slot pointed to

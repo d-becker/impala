@@ -176,7 +176,7 @@ class SlotDescriptor {
 
   void CodegenWriteToSlot(const CodegenAnyValReadWriteInfo& read_write_info,
       llvm::Value* tuple_llvm_struct_ptr,
-      llvm::Value* pool_val, llvm::BasicBlock* insert_before) const;
+      llvm::Value* pool_val, llvm::BasicBlock* insert_before = nullptr) const;
 
   /// Stores this 'any_val' into a native slot, e.g. a StringValue or TimestampValue.
   /// This should only be used if 'any_val' is not null.
@@ -188,7 +188,6 @@ class SlotDescriptor {
   ///
   /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
   /// 'pool_val' has to be of type MemPool*.
-  /// TODO: Do something similar for structs too.
   static void CodegenStoreNonNullAnyVal(CodegenAnyVal& any_val,
       llvm::Value* raw_val_ptr, llvm::Value* pool_val = nullptr);
 

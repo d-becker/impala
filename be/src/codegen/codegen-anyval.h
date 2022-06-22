@@ -205,24 +205,8 @@ class CodegenAnyVal {
 
   /// Load this *Val's value from 'raw_val_ptr', which must be a pointer to the matching
   /// native type, e.g. a StringValue or TimestampValue slot in a tuple.
-  /// TODO: Delete this too?
+  /// TODO: Delete this too? Or move to SlotDescriptor.
   void LoadFromNativePtr(llvm::Value* raw_val_ptr);
-
-  /// Writes this *Val's value to the appropriate slot in 'tuple' if non-null, or sets the
-  /// appropriate null bit if null. This assumes null bits are initialized to 0. Analogous
-  /// to RawValue::Write(void* value, Tuple*, SlotDescriptor*, MemPool*). 'tuple' should
-  /// be a pointer to the generated LLVM struct type, not an opaque Tuple*.
-  ///
-  /// Creates new basic blocks in order to branch on the 'is_null' fields, and leaves
-  /// builder_'s insert point at the block after these new blocks. This block will be
-  /// 'insert_before' if specified, or a new basic block created at the end of the
-  /// function if 'insert_before' is NULL.
-  ///
-  /// If 'pool_val' is non-NULL, var-len data will be copied into 'pool_val'.
-  /// 'pool_val' has to be of type MemPool*.
-  /// TODO: Delete?
-  void WriteToSlot(const SlotDescriptor& slot_desc, llvm::Value* tuple,
-      llvm::Value* pool_val, llvm::BasicBlock* insert_before = nullptr);
 
   /// Returns the i1 result of this == other. this and other must be non-null.
   llvm::Value* Eq(CodegenAnyVal* other);

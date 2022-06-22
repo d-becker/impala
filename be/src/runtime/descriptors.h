@@ -157,6 +157,10 @@ class SlotDescriptor {
   /// of other_desc, but not necessarily ids.
   bool LayoutEquals(const SlotDescriptor& other_desc) const;
 
+  /// Load "any_val"'s value from 'raw_val_ptr', which must be a pointer to the matching
+  /// native type, e.g. a StringValue or TimestampValue slot in a tuple.
+  static void CodegenLoadAnyVal(CodegenAnyVal* any_val, llvm::Value* raw_val_ptr);
+
   /// Generate LLVM code at the insert position of 'builder' that returns a boolean value
   /// represented as a LLVM i1 indicating whether this slot is null in 'tuple'.
   llvm::Value* CodegenIsNull(

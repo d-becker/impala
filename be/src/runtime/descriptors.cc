@@ -681,6 +681,70 @@ void DescriptorTbl::GetTupleDescs(vector<TupleDescriptor*>* descs) const {
   }
 }
 
+void SlotDescriptor::CodegenLoadAnyVal(CodegenAnyVal* any_val, llvm::Value* raw_val_ptr) {
+  DCHECK(raw_val_ptr->getType()->isPointerTy());
+  llvm::Type* raw_val_type = raw_val_ptr->getType()->getPointerElementType();
+  LlvmCodeGen* const codegen = any_val->codegen();
+  LlvmBuilder* const builder = any_val->builder();
+  const ColumnType& type = any_val->type();
+  DCHECK_EQ(raw_val_type, codegen->GetSlotType(type))
+      << endl
+      << LlvmCodeGen::Print(raw_val_ptr) << endl
+      << type << " => " << LlvmCodeGen::Print(
+          codegen->GetSlotType(type));
+  switch (type.type) {
+    case TYPE_STRING:
+    case TYPE_VARCHAR: {
+      // Convert StringValue to StringVal
+      llvm::Value* string_value = builder->CreateLoad(raw_val_ptr, "string_value");
+      any_val->SetPtr(builder->CreateExtractValue(string_value, 0, "ptr"));
+      any_val->SetLen(builder->CreateExtractValue(string_value, 1, "len"));
+      break;
+    }
+    case TYPE_CHAR:
+    case TYPE_FIXED_UDA_INTERMEDIATE: {
+      // Convert fixed-size slot to StringVal.
+      any_val->SetPtr(builder->CreateBitCast(raw_val_ptr, codegen->ptr_type()));
+      any_val->SetLen(codegen->GetI32Constant(type.len));
+      break;
+    }
+    case TYPE_TIMESTAMP: {
+      // Convert TimestampValue to TimestampVal
+      // TimestampValue has type
+      //   { boost::posix_time::time_duration, boost::gregorian::date }
+      // = { {{{i64}}}, {{i32}} }
+
+      llvm::Value* ts_value = builder->CreateLoad(raw_val_ptr, "ts_value");
+      // Extract time_of_day i64 from boost::posix_time::time_duration.
+      uint32_t time_of_day_idxs[] = {0, 0, 0, 0};
+      llvm::Value* time_of_day =
+          builder->CreateExtractValue(ts_value, time_of_day_idxs, "time_of_day");
+      DCHECK(time_of_day->getType()->isIntegerTy(64));
+      any_val->SetTimeOfDay(time_of_day);
+      // Extract i32 from boost::gregorian::date
+      uint32_t date_idxs[] = {1, 0, 0};
+      llvm::Value* date = builder->CreateExtractValue(ts_value, date_idxs, "date");
+      DCHECK(date->getType()->isIntegerTy(32));
+      any_val->SetDate(date);
+      break;
+    }
+    case TYPE_BOOLEAN:
+    case TYPE_TINYINT:
+    case TYPE_SMALLINT:
+    case TYPE_INT:
+    case TYPE_BIGINT:
+    case TYPE_FLOAT:
+    case TYPE_DOUBLE:
+    case TYPE_DECIMAL:
+    case TYPE_DATE:
+      any_val->SetVal(builder->CreateLoad(raw_val_ptr, "raw_val"));
+      break;
+    default:
+      DCHECK(false) << "NYI: " << type.DebugString();
+      break;
+  }
+}
+
 llvm::Value* SlotDescriptor::CodegenIsNull(
     LlvmCodeGen* codegen, LlvmBuilder* builder, llvm::Value* tuple) const {
   return CodegenIsNull(codegen, builder, null_indicator_offset_, tuple);

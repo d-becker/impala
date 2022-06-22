@@ -431,7 +431,7 @@ Status AggregatorConfig::CodegenUpdateSlot(LlvmCodeGen* codegen, int agg_fn_idx,
         dst.SetIsNull(slot_desc->CodegenIsNull(codegen, &builder, agg_tuple_arg));
       }
     }
-    dst.LoadFromNativePtr(dst_slot_ptr);
+    SlotDescriptor::CodegenLoadAnyVal(&dst, dst_slot_ptr);
 
     // Get the FunctionContext object for the AggFnEvaluator.
     llvm::Function* get_agg_fn_ctx_fn =

@@ -588,67 +588,6 @@ llvm::Value* CodegenAnyVal::GetAnyValPtr(const std::string& name) const {
       GetLoweredPtr(), GetAnyValPtrType(codegen_), name);
 }
 
-void CodegenAnyVal::LoadFromNativePtr(llvm::Value* raw_val_ptr) {
-  DCHECK(raw_val_ptr->getType()->isPointerTy());
-  llvm::Type* raw_val_type = raw_val_ptr->getType()->getPointerElementType();
-  DCHECK_EQ(raw_val_type, codegen_->GetSlotType(type_))
-      << endl
-      << LlvmCodeGen::Print(raw_val_ptr) << endl
-      << type_ << " => " << LlvmCodeGen::Print(
-          codegen_->GetSlotType(type_));
-  switch (type_.type) {
-    case TYPE_STRING:
-    case TYPE_VARCHAR: {
-      // Convert StringValue to StringVal
-      llvm::Value* string_value = builder_->CreateLoad(raw_val_ptr, "string_value");
-      SetPtr(builder_->CreateExtractValue(string_value, 0, "ptr"));
-      SetLen(builder_->CreateExtractValue(string_value, 1, "len"));
-      break;
-    }
-    case TYPE_CHAR:
-    case TYPE_FIXED_UDA_INTERMEDIATE: {
-      // Convert fixed-size slot to StringVal.
-      SetPtr(builder_->CreateBitCast(raw_val_ptr, codegen_->ptr_type()));
-      SetLen(codegen_->GetI32Constant(type_.len));
-      break;
-    }
-    case TYPE_TIMESTAMP: {
-      // Convert TimestampValue to TimestampVal
-      // TimestampValue has type
-      //   { boost::posix_time::time_duration, boost::gregorian::date }
-      // = { {{{i64}}}, {{i32}} }
-
-      llvm::Value* ts_value = builder_->CreateLoad(raw_val_ptr, "ts_value");
-      // Extract time_of_day i64 from boost::posix_time::time_duration.
-      uint32_t time_of_day_idxs[] = {0, 0, 0, 0};
-      llvm::Value* time_of_day =
-          builder_->CreateExtractValue(ts_value, time_of_day_idxs, "time_of_day");
-      DCHECK(time_of_day->getType()->isIntegerTy(64));
-      SetTimeOfDay(time_of_day);
-      // Extract i32 from boost::gregorian::date
-      uint32_t date_idxs[] = {1, 0, 0};
-      llvm::Value* date = builder_->CreateExtractValue(ts_value, date_idxs, "date");
-      DCHECK(date->getType()->isIntegerTy(32));
-      SetDate(date);
-      break;
-    }
-    case TYPE_BOOLEAN:
-    case TYPE_TINYINT:
-    case TYPE_SMALLINT:
-    case TYPE_INT:
-    case TYPE_BIGINT:
-    case TYPE_FLOAT:
-    case TYPE_DOUBLE:
-    case TYPE_DECIMAL:
-    case TYPE_DATE:
-      SetVal(builder_->CreateLoad(raw_val_ptr, "raw_val"));
-      break;
-    default:
-      DCHECK(false) << "NYI: " << type_.DebugString();
-      break;
-  }
-}
-
 llvm::Value* CodegenAnyVal::Eq(CodegenAnyVal* other) {
   DCHECK_EQ(type_, other->type_);
   switch (type_.type) {

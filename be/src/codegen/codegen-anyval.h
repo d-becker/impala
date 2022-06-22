@@ -203,11 +203,6 @@ class CodegenAnyVal {
   /// type 'AnyVal*'. This *Val should be non-null. The output variable is called 'name'.
   llvm::Value* GetAnyValPtr(const std::string& name = "") const;
 
-  /// Load this *Val's value from 'raw_val_ptr', which must be a pointer to the matching
-  /// native type, e.g. a StringValue or TimestampValue slot in a tuple.
-  /// TODO: Delete this too? Or move to SlotDescriptor.
-  void LoadFromNativePtr(llvm::Value* raw_val_ptr);
-
   /// Returns the i1 result of this == other. this and other must be non-null.
   llvm::Value* Eq(CodegenAnyVal* other);
 

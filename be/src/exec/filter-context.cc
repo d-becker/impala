@@ -229,7 +229,7 @@ Status FilterContext::CodegenEval(
 
   // Saves 'result' on the stack and passes a pointer to it to 'runtime_filter_fn'.
   builder.SetInsertPoint(rwi.non_null_block);
-  llvm::Value* native_ptr = SlotDescriptor::CodegenToNewNativePtr(rwi);
+  llvm::Value* native_ptr = SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(eval_filter_block);
 
@@ -533,7 +533,7 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
 
   // Saves 'result' on the stack and passes a pointer to it to Insert().
   builder.SetInsertPoint(rwi.non_null_block);
-  llvm::Value* native_ptr = SlotDescriptor::CodegenToNewNativePtr(rwi);
+  llvm::Value* native_ptr = SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(insert_filter_block);
 

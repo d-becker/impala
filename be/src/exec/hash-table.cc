@@ -998,7 +998,7 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     // Convert to canonical value.
     CodegenConvertToCanonicalForm(&rwi);
 
-    SlotDescriptor::CodegenStoreToNativePtr(rwi, llvm_loc);
+    SlotDescriptor::CodegenStoreNonNullAnyVal(rwi, llvm_loc);
     builder.CreateBr(continue_block);
 
     // Continue block

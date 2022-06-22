@@ -795,7 +795,7 @@ void SlotDescriptor::CodegenWriteToSlotHelper(
     CodegenStoreStructToNativePtr(read_write_info, main_tuple_llvm_struct_ptr,
         slot, pool_val, insert_before);
   } else {
-    CodegenStoreToNativePtr(read_write_info, slot, pool_val);
+    CodegenStoreNonNullAnyVal(read_write_info, slot, pool_val);
 
     // We only need this branch if we are not a struct, because for structs, the last leaf
     // (non-struct) field will add this branch.
@@ -859,10 +859,6 @@ CodegenAnyValReadWriteInfo CodegenAnyValToReadWriteInfo(CodegenAnyVal& any_val,
       break;
     }
     case TYPE_CHAR:
-      // TODO: Do we need this memcpy?
-      // TODO: Probably delete it.
-      // rwi.codegen->CodegenMemcpy(rwi.builder, raw_val_ptr,
-      //     any_val.GetPtr(), rwi.type->len);
       rwi.len = rwi.codegen->GetI32Constant(rwi.type->len);
       rwi.ptr = any_val.GetPtr();
       break;
@@ -898,13 +894,13 @@ CodegenAnyValReadWriteInfo CodegenAnyValToReadWriteInfo(CodegenAnyVal& any_val,
   return rwi;
 }
 
-void SlotDescriptor::CodegenStoreToNativePtr(CodegenAnyVal& any_val,
+void SlotDescriptor::CodegenStoreNonNullAnyVal(CodegenAnyVal& any_val,
       llvm::Value* raw_val_ptr, llvm::Value* pool_val) {
   CodegenAnyValReadWriteInfo rwi = CodegenAnyValToReadWriteInfo(any_val, pool_val);
-  CodegenStoreToNativePtr(rwi, raw_val_ptr, pool_val);
+  CodegenStoreNonNullAnyVal(rwi, raw_val_ptr, pool_val);
 }
 
-void SlotDescriptor::CodegenStoreToNativePtr(
+void SlotDescriptor::CodegenStoreNonNullAnyVal(
     const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value* raw_val_ptr,
     llvm::Value* pool_val) {
   LlvmBuilder* builder = read_write_info.builder;
@@ -957,19 +953,19 @@ void SlotDescriptor::CodegenStoreToNativePtr(
   }
 }
 
-llvm::Value* SlotDescriptor::CodegenToNewNativePtr(
+llvm::Value* SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(
       const CodegenAnyValReadWriteInfo& read_write_info, llvm::Value* pool_val) {
   LlvmCodeGen* codegen = read_write_info.codegen;
   llvm::Value* native_ptr = codegen->CreateEntryBlockAlloca(*read_write_info.builder,
       codegen->GetSlotType(*read_write_info.type));
-  SlotDescriptor::CodegenStoreToNativePtr(read_write_info, native_ptr, pool_val);
+  SlotDescriptor::CodegenStoreNonNullAnyVal(read_write_info, native_ptr, pool_val);
   return native_ptr;
 }
 
-llvm::Value* SlotDescriptor::CodegenToNewNativePtr(
+llvm::Value* SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(
       CodegenAnyVal& any_val, llvm::Value* pool_val) {
   CodegenAnyValReadWriteInfo rwi = CodegenAnyValToReadWriteInfo(any_val, pool_val);
-  return CodegenToNewNativePtr(rwi, pool_val);
+  return CodegenStoreNonNullAnyValToNewAlloca(rwi, pool_val);
 }
 
 void SlotDescriptor::CodegenSetToNull(const CodegenAnyValReadWriteInfo& read_write_info,

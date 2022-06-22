@@ -308,7 +308,8 @@ Status HiveUdfCall::CodegenEvalChildren(LlvmCodeGen* codegen, LlvmBuilder* build
      llvm::Value* const input_ptr = builder->CreateCall(get_input_val_buff_at_offset_fn,
          {jni_ctx, codegen->GetI32Constant(input_byte_offsets_[i])}, "input_ptr");
 
-     llvm::Value* const child_val_ptr = SlotDescriptor::CodegenToNewNativePtr(rwi);
+     llvm::Value* const child_val_ptr =
+         SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
      const std::size_t size = CodeGenUtil::GetTypeSize(child_type.type);
      codegen->CodegenMemcpy(builder, input_ptr, child_val_ptr, size);
      builder->CreateBr(next_eval_child_block);

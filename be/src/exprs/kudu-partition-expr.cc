@@ -292,7 +292,8 @@ Status KuduPartitionExpr::GetCodegendComputeFnImpl(
     const ColumnType& type = col_desc.type();
     DCHECK_EQ(child_expr->type().type, type.type);
 
-    llvm::Value* const child_native_val = SlotDescriptor::CodegenToNewNativePtr(rwi);
+    llvm::Value* const child_native_val =
+        SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
 
     CodegenCallWriteKuduValue(codegen, &builder, col, type,
         kudu_row_ptr, child_native_val);

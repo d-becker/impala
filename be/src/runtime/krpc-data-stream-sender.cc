@@ -874,7 +874,7 @@ Status KrpcDataStreamSenderConfig::CodegenHashRow(
 
     // Saves 'partition_val' on the stack and passes a pointer to it to the hash function
     builder.SetInsertPoint(rwi.non_null_block);
-    llvm::Value* native_ptr = SlotDescriptor::CodegenToNewNativePtr(rwi);
+    llvm::Value* native_ptr = SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
     native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
     builder.CreateBr(hash_val_block);
 

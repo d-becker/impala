@@ -190,7 +190,6 @@ void SlotRef::AssignFnCtxIdx(int* next_fn_ctx_idx) {
 //
 // TODO: We could generate a typed struct (and not a char*) for Tuple for llvm.  We know
 // the types from the TupleDesc.  It will likely make this code simpler to reason about.
-// TODO: Update generated code.
 Status SlotRef::GetCodegendComputeFnImpl(LlvmCodeGen* codegen, llvm::Function** fn) {
   // SlotRefs are based on the slot_id and tuple_idx.  Combine them to make a
   // query-wide unique id. We also need to combine whether the tuple is nullable. For

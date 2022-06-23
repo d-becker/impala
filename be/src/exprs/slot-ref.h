@@ -79,8 +79,6 @@ class SlotRef : public ScalarExpr {
       ScalarExprEvaluator*, const TupleRow*) const override;
 
  private:
-  // TODO: We seem to codegen separately for the children as well. Solve the problem at
-  // the caller (impala::FragmentState::CodegenScalarExprs?)
   CodegenAnyVal CodegenValue(LlvmCodeGen* codegen, LlvmBuilder* builder,
       llvm::Function* fn, llvm::Value* eval_ptr, llvm::Value* row_ptr,
       llvm::BasicBlock* entry_block = nullptr);

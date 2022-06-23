@@ -175,6 +175,8 @@ class FragmentState {
       const std::string& extra_info = "", const std::string& extra_label = "");
 
  private:
+  bool ScalarExprIsWithinStruct(const ScalarExpr* expr) const;
+
   ObjectPool obj_pool_;
 
   /// Reference to the query state object that owns this.

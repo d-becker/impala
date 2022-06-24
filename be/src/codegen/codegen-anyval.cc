@@ -1007,7 +1007,6 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
   llvm::BasicBlock* non_null_block = llvm::BasicBlock::Create(context, "non_null", fn);
   llvm::BasicBlock* null_block = llvm::BasicBlock::Create(context, "null", fn);
   llvm::Value* is_null = GetIsNull();
-  res.is_null = is_null;
   builder_->CreateCondBr(is_null, null_block, non_null_block);
 
   builder_->SetInsertPoint(non_null_block);
@@ -1133,7 +1132,6 @@ void CodegenAnyVal::StructToReadWriteInfo(
 
     // Check whether child_ptr is NULL.
     llvm::Value* child_is_null = builder->CreateIsNull(child_ptr, "child_is_null");
-    child_read_write_info.is_null = child_is_null;
 
     llvm::BasicBlock* non_null_block =
         llvm::BasicBlock::Create(context, "non_null", fn);

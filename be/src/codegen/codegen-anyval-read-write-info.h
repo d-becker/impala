@@ -40,9 +40,6 @@ struct CodegenAnyValReadWriteInfo {
   int fn_ctx_idx = -1;
   llvm::Value* eval = nullptr; // Pointer to the ScalarExprEvaluator in LLVM code.
 
-  // Contains whether this is NULL or not.
-  llvm::Value* is_null = nullptr;
-
   // Possible parts the resulting value may be composed of.
   // Simple native types
   llvm::Value* val = nullptr;

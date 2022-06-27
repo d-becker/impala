@@ -30,8 +30,37 @@ struct ColumnType;
 class LlvmBuilder;
 class LlvmCodeGen;
 
-// TODO: Find a better name and put into its own file?
-// TODO: Document
+/// This struct is used in conversions to and from 'CodegenAnyVal', i.e. 'AnyVal' objects
+/// in codegen code. This struct is an interface between sources and destinations: sources
+/// generate an instance of this struct and destinations take that instance and use it to
+/// write the value.
+///
+/// The other side can for example be tuples from which we read (in the
+/// case of 'SlotRef'), tuples we write into (in case of materialisation, see
+/// Tuple::CodegenMaterializeExprs()) but other cases exist, too. The main advantage is
+/// that sources do not have to know how to write their destinations, only how to read the
+/// values (and vice versa). This also makes it possible, should there be need for it, to
+/// leave out 'CodegenAnyVal' and convert directly between a source and a destination that
+/// know how to read and write 'CodegenAnyValReadWriteInfo's.
+///
+/// An instance of 'CodegenAnyValReadWriteInfo' represents a value but also contains
+/// information about how it is read and written in LLVM IR.
+///
+/// A source (for example 'SlotRef') should generate IR that starts in 'entry_block' (so
+/// that other IR code can branch to it), perform NULL checking and branch to 'null_block'
+/// and 'non_null_block' accordingly. The source is responsible for creating these blocks.
+/// It is allowed to create more blocks, but these blocks should not be missing.
+///
+/// A destination should be able to rely on this structure, i.e. it should be able to
+/// branch to 'entry_block' and to generate code in 'null_block' and 'non_null_block' to
+/// write the value. It is also allowed to generate additional blocks but it should not
+/// write into 'entry_block' or assume that the source only used the above mentioned
+/// blocks.
+///
+/// Structs are represented recursively. The fields 'codegen', 'builder' and 'type' should
+/// be filled by the source so that the destination can use them to generate IR code.
+/// Other fields, such as 'fn_ctx_idx' and 'eval' may be needed in some cases but not in
+/// others.
 struct CodegenAnyValReadWriteInfo {
   LlvmCodeGen* codegen = nullptr;
   LlvmBuilder* builder = nullptr;

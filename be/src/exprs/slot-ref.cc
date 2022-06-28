@@ -301,7 +301,7 @@ void CodegenReadingTimestamp(LlvmCodeGen* codegen, LlvmBuilder* builder,
 
 CodegenAnyValReadWriteInfo SlotRef::CodegenReadSlot(LlvmCodeGen* codegen,
     LlvmBuilder* builder,
-    llvm::Value* eval_ptr, llvm::Value* row_ptr,
+    llvm::Value* eval_ptr, llvm::Value* row_ptr, llvm::BasicBlock* entry_block,
     llvm::BasicBlock* null_block, llvm::BasicBlock* read_slot_block,
     llvm::Value* tuple_ptr, llvm::Value* slot_offset) {
   builder->SetInsertPoint(read_slot_block);
@@ -317,7 +317,7 @@ CodegenAnyValReadWriteInfo SlotRef::CodegenReadSlot(LlvmCodeGen* codegen,
   // variable is set to the appropriate block.
   llvm::BasicBlock* non_null_incoming_block = read_slot_block;
 
-  CodegenAnyValReadWriteInfo res;
+  CodegenAnyValReadWriteInfo res(codegen, builder, type_);
 
   // Depending on the type, create phi nodes for each value needed to populate the return
   // *Val. The optimizer does a better job when there is a phi node for each value, rather
@@ -343,28 +343,31 @@ CodegenAnyValReadWriteInfo SlotRef::CodegenReadSlot(LlvmCodeGen* codegen,
       CodegenAnyValReadWriteInfo codegen_anyval_info =
           child_slot_ref->CreateCodegenAnyValReadWriteInfo(codegen, builder, fn,
            child_eval, row_ptr, child_entry_block);
-     res.children.push_back(codegen_anyval_info);
+     res.children().push_back(codegen_anyval_info);
     }
   } else if (type_.IsStringType() || type_.type == TYPE_FIXED_UDA_INTERMEDIATE
       || type_.IsCollectionType()) {
-    CodegenReadingStringOrCollectionVal(codegen, builder, type_, val_ptr, &res.ptr, &res.len);
-    DCHECK(res.ptr != nullptr);
-    DCHECK(res.len != nullptr);
+    llvm::Value* ptr;
+    llvm::Value* len;
+    CodegenReadingStringOrCollectionVal(codegen, builder, type_, val_ptr,
+        &ptr, &len);
+    DCHECK(ptr != nullptr);
+    DCHECK(len != nullptr);
+    res.SetPtrAndLen(ptr, len);
   } else if (type_.type == TYPE_TIMESTAMP) {
-    CodegenReadingTimestamp(codegen, builder, val_ptr, &res.time_of_day, &res.date);
-    DCHECK(res.time_of_day != nullptr);
-    DCHECK(res.date != nullptr);
+    llvm::Value* time_of_day;
+    llvm::Value* date;
+    CodegenReadingTimestamp(codegen, builder, val_ptr, &time_of_day, &date);
+    DCHECK(time_of_day != nullptr);
+    DCHECK(date != nullptr);
+    res.SetTimeAndDate(time_of_day, date);
   } else {
-    res.val = builder->CreateLoad(val_ptr, "val");
+    res.SetSimpleVal(builder->CreateLoad(val_ptr, "val"));
   }
 
-  res.codegen = codegen;
-  res.builder = builder;
-  res.type = &type_;
-  res.fn_ctx_idx = fn_ctx_idx_;
-  res.eval = eval_ptr;
-  res.null_block = null_block;
-  res.non_null_block = non_null_incoming_block;
+  res.SetFnCtxIdx(fn_ctx_idx_);
+  res.SetEval(eval_ptr);
+  res.SetBlocks(entry_block, null_block, non_null_incoming_block);
   return res;
 }
 
@@ -445,8 +448,7 @@ CodegenAnyValReadWriteInfo SlotRef::CreateCodegenAnyValReadWriteInfo(
 
   //### Part 3: read non-null value.
   CodegenAnyValReadWriteInfo res = CodegenReadSlot(codegen, builder, eval_ptr,
-      row_ptr, null_block, read_slot_block, tuple_ptr, slot_offset);
-  res.entry_block = entry_block;
+      row_ptr, entry_block, null_block, read_slot_block, tuple_ptr, slot_offset);
 
   builder->restoreIP(ip);
   return res;

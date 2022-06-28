@@ -215,20 +215,18 @@ Status FilterContext::CodegenEval(
       filter_expr->type(), compute_fn, compute_fn_args, "result");
 
   CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
-  // TODO: If the next line is omitted and *fn == nullptr, we end up crashing instead of
-  // returning an error.
-  builder.CreateBr(rwi.entry_block);
+  rwi.entry_block().BranchTo(&builder);
 
   llvm::BasicBlock* eval_filter_block =
       llvm::BasicBlock::Create(context, "eval_filter", eval_filter_fn);
 
   // Set the pointer to NULL in case it evaluates to NULL.
-  builder.SetInsertPoint(rwi.null_block);
+  builder.SetInsertPoint(rwi.null_block());
   llvm::Value* null_ptr = codegen->null_ptr_value();
   builder.CreateBr(eval_filter_block);
 
   // Saves 'result' on the stack and passes a pointer to it to 'runtime_filter_fn'.
-  builder.SetInsertPoint(rwi.non_null_block);
+  builder.SetInsertPoint(rwi.non_null_block());
   llvm::Value* native_ptr = SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(eval_filter_block);
@@ -236,8 +234,8 @@ Status FilterContext::CodegenEval(
   // Get the arguments in place to call 'runtime_filter_fn' to see if the row passes.
   builder.SetInsertPoint(eval_filter_block);
   llvm::PHINode* val_ptr_phi = builder.CreatePHI(codegen->ptr_type(), 2, "val_ptr_phi");
-  val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block);
-  val_ptr_phi->addIncoming(null_ptr, rwi.null_block);
+  val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block());
+  val_ptr_phi->addIncoming(null_ptr, rwi.null_block());
 
   // Create a global constant of the filter expression's ColumnType. It needs to be a
   // constant for constant propagation and dead code elimination in 'runtime_filter_fn'.
@@ -521,18 +519,18 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
       codegen, &builder, filter_expr->type(), compute_fn, compute_fn_args, "result");
 
   CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
-  builder.CreateBr(rwi.entry_block);
+  rwi.entry_block().BranchTo(&builder);
 
   llvm::BasicBlock* insert_filter_block =
       llvm::BasicBlock::Create(context, "insert_filter", insert_filter_fn);
 
   // Set the pointer to NULL in case it evaluates to NULL.
-  builder.SetInsertPoint(rwi.null_block);
+  builder.SetInsertPoint(rwi.null_block());
   llvm::Value* null_ptr = codegen->null_ptr_value();
   builder.CreateBr(insert_filter_block);
 
   // Saves 'result' on the stack and passes a pointer to it to Insert().
-  builder.SetInsertPoint(rwi.non_null_block);
+  builder.SetInsertPoint(rwi.non_null_block());
   llvm::Value* native_ptr = SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
   native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
   builder.CreateBr(insert_filter_block);
@@ -540,8 +538,8 @@ Status FilterContext::CodegenInsert(LlvmCodeGen* codegen, ScalarExpr* filter_exp
   // Get the arguments in place to call Insert().
   builder.SetInsertPoint(insert_filter_block);
   llvm::PHINode* val_ptr_phi = builder.CreatePHI(codegen->ptr_type(), 2, "val_ptr_phi");
-  val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block);
-  val_ptr_phi->addIncoming(null_ptr, rwi.null_block);
+  val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block());
+  val_ptr_phi->addIncoming(null_ptr, rwi.null_block());
 
   // Insert into the bloom filter.
   if (filter_desc.type == TRuntimeFilterType::BLOOM) {

@@ -793,12 +793,13 @@ void HashTableCtx::CodegenConvertToCanonicalForm(CodegenAnyValReadWriteInfo* rea
   // Convert the value to a bit pattern that is unambiguous.
   // Specifically, for floating point type values, NaN values are converted to
   // the same bit pattern, and -0 is converted to +0.
-  switch(read_write_info->type->type) {
+  switch(read_write_info->type().type) {
     case TYPE_FLOAT:
     case TYPE_DOUBLE: {
-      llvm::Value* new_val = CodegenConvertToCanonicalForm(read_write_info->codegen,
-          read_write_info->builder, *read_write_info->type, read_write_info->val);
-      read_write_info->val = new_val;
+      llvm::Value* new_val = CodegenConvertToCanonicalForm(read_write_info->codegen(),
+          read_write_info->builder(), read_write_info->type(),
+          read_write_info->GetSimpleVal());
+      read_write_info->SetSimpleVal(new_val);
     }
     default:
       ;
@@ -976,12 +977,12 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
         NULL, expr_values_null, codegen->GetI32Constant(i), "null_byte_loc");
 
     CodegenAnyValReadWriteInfo rwi = result.ToReadWriteInfo();
-    builder.CreateBr(rwi.entry_block);
+    rwi.entry_block().BranchTo(&builder);
 
     llvm::BasicBlock* continue_block = llvm::BasicBlock::Create(context, "continue", *fn);
 
     // Null block
-    builder.SetInsertPoint(rwi.null_block);
+    builder.SetInsertPoint(rwi.null_block());
     builder.CreateStore(codegen->GetI8Constant(1), llvm_null_byte_loc);
     if (!config.stores_nulls) {
       // hash table doesn't store nulls, no reason to keep evaluating exprs
@@ -992,7 +993,7 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
     }
 
     // Not null block
-    builder.SetInsertPoint(rwi.non_null_block);
+    builder.SetInsertPoint(rwi.non_null_block());
     builder.CreateStore(codegen->GetI8Constant(0), llvm_null_byte_loc);
 
     // Convert to canonical value.
@@ -1007,8 +1008,8 @@ Status HashTableCtx::CodegenEvalRow(LlvmCodeGen* codegen, bool build_row,
       // Update has_null
       llvm::PHINode* is_null_phi =
           builder.CreatePHI(codegen->bool_type(), 2, "is_null_phi");
-      is_null_phi->addIncoming(codegen->true_value(), rwi.null_block);
-      is_null_phi->addIncoming(codegen->false_value(), rwi.non_null_block);
+      is_null_phi->addIncoming(codegen->true_value(), rwi.null_block());
+      is_null_phi->addIncoming(codegen->false_value(), rwi.non_null_block());
       has_null = builder.CreateOr(has_null, is_null_phi, "has_null");
     }
   }

@@ -862,18 +862,18 @@ Status KrpcDataStreamSenderConfig::CodegenHashRow(
         partition_exprs_[i]->type(), compute_fn, compute_fn_args, "partition_val");
 
     CodegenAnyValReadWriteInfo rwi = partition_val.ToReadWriteInfo();
-    builder.CreateBr(rwi.entry_block);
+    rwi.entry_block().BranchTo(&builder);
 
     llvm::BasicBlock* hash_val_block =
         llvm::BasicBlock::Create(context, "hash_val_block", hash_row_fn);
 
     // Set the pointer to NULL in case 'partition_val' evaluates to NULL
-    builder.SetInsertPoint(rwi.null_block);
+    builder.SetInsertPoint(rwi.null_block());
     llvm::Value* null_ptr = codegen->null_ptr_value();
     builder.CreateBr(hash_val_block);
 
     // Saves 'partition_val' on the stack and passes a pointer to it to the hash function
-    builder.SetInsertPoint(rwi.non_null_block);
+    builder.SetInsertPoint(rwi.non_null_block());
     llvm::Value* native_ptr = SlotDescriptor::CodegenStoreNonNullAnyValToNewAlloca(rwi);
     native_ptr = builder.CreatePointerCast(native_ptr, codegen->ptr_type(), "native_ptr");
     builder.CreateBr(hash_val_block);
@@ -881,8 +881,8 @@ Status KrpcDataStreamSenderConfig::CodegenHashRow(
     // Picks the input value to hash function
     builder.SetInsertPoint(hash_val_block);
     llvm::PHINode* val_ptr_phi = builder.CreatePHI(codegen->ptr_type(), 2, "val_ptr_phi");
-    val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block);
-    val_ptr_phi->addIncoming(null_ptr, rwi.null_block);
+    val_ptr_phi->addIncoming(native_ptr, rwi.non_null_block());
+    val_ptr_phi->addIncoming(null_ptr, rwi.null_block());
 
     // Creates a global constant of the partition expression's ColumnType. It has to be a
     // constant for constant propagation and dead code elimination in 'get_hash_value_fn'

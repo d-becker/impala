@@ -248,7 +248,7 @@ class SlotDescriptor {
 
   void CodegenWriteToSlotHelper(const CodegenAnyValReadWriteInfo& read_write_info,
       llvm::Value* main_tuple_llvm_struct_ptr, llvm::Value* tuple_llvm_struct_ptr,
-      llvm::Value* pool_val, llvm::BasicBlock* insert_before) const;
+      llvm::Value* pool_val, NonWritableBasicBlock insert_before) const;
 
   /// Stores a struct value into a native slot. This should only be used if this struct is
   /// not null.
@@ -259,7 +259,7 @@ class SlotDescriptor {
   /// beginning of the main tuple.
   void CodegenStoreStructToNativePtr(const CodegenAnyValReadWriteInfo& read_write_info,
       llvm::Value* main_tuple_ptr, llvm::Value* struct_slot_ptr, llvm::Value* pool_val,
-      llvm::BasicBlock* insert_before) const;
+      NonWritableBasicBlock insert_before) const;
 
   // Sets the null indicator bit to 0 - recursively for structs.
   void CodegenSetToNull(const CodegenAnyValReadWriteInfo& read_write_info,

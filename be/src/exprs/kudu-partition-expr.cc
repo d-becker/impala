@@ -276,17 +276,17 @@ Status KuduPartitionExpr::GetCodegendComputeFnImpl(
         codegen, &builder, child_type, child_fn, {args[0], args[1]}, "child");
 
     CodegenAnyValReadWriteInfo rwi = child_wrapped.ToReadWriteInfo();
-    builder.CreateBr(rwi.entry_block);
+    rwi.entry_block().BranchTo(&builder);
 
     // Child is null.
-    builder.SetInsertPoint(rwi.null_block);
+    builder.SetInsertPoint(rwi.null_block());
     CodegenAnyVal error_ret_val =
         CodegenAnyVal::GetNonNullVal(codegen, &builder, type(), "error_ret_val");
     error_ret_val.SetVal(-1);
     builder.CreateRet(error_ret_val.GetLoweredValue());
 
     // Child is not null.
-    builder.SetInsertPoint(rwi.non_null_block);
+    builder.SetInsertPoint(rwi.non_null_block());
     const int col = tkudu_partition_expr_.referenced_columns[i];
     const ColumnDescriptor& col_desc = table_desc_->col_descs()[col];
     const ColumnType& type = col_desc.type();

@@ -287,19 +287,19 @@ Status HiveUdfCall::CodegenEvalChildren(LlvmCodeGen* codegen, LlvmBuilder* build
          codegen, builder, child_type, child_fn, *args, "child");
 
      CodegenAnyValReadWriteInfo rwi = child_wrapped.ToReadWriteInfo();
-     builder->CreateBr(rwi.entry_block);
+     rwi.entry_block().BranchTo(builder);
 
      llvm::BasicBlock* next_eval_child_block = llvm::BasicBlock::Create(
          context, "eval_child", function);
 
      // Child is null
-     builder->SetInsertPoint(rwi.null_block);
+     builder->SetInsertPoint(rwi.null_block());
      builder->CreateCall(set_input_null_buff_elem_fn,
          {jni_ctx, codegen->GetI32Constant(i), codegen->GetI8Constant(1)});
      builder->CreateBr(next_eval_child_block);
 
      // Child is not null.
-     builder->SetInsertPoint(rwi.non_null_block);
+     builder->SetInsertPoint(rwi.non_null_block());
      builder->CreateCall(set_input_null_buff_elem_fn,
          {jni_ctx, codegen->GetI32Constant(i), codegen->GetI8Constant(0)});
      llvm::Value* const input_ptr = builder->CreateCall(get_input_val_buff_at_offset_fn,

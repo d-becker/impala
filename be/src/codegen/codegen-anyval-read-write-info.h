@@ -19,6 +19,8 @@
 
 #include <vector>
 
+#include "common/logging.h"
+
 namespace llvm {
 class BasicBlock;
 class Value;
@@ -30,9 +32,34 @@ struct ColumnType;
 class LlvmBuilder;
 class LlvmCodeGen;
 
-/// This struct is used in conversions to and from 'CodegenAnyVal', i.e. 'AnyVal' objects
-/// in codegen code. This struct is an interface between sources and destinations: sources
-/// generate an instance of this struct and destinations take that instance and use it to
+/// This class wraps an 'llvm::BasicBlock*' and provides a const interface to it extended
+/// with the possibility of branching to it (either conditionally or not).
+/// This is useful for the entry blocks of 'CodegenAnyValReadWriteInfo' objects as we do
+/// not want these blocks to be writable but we want to be able to branch to them.
+///
+/// We cannot use a simple const pointer because the branching functions
+/// 'LlvmBuilder::Create[Cond]Br()' take a non-const pointer.
+class NonWritableBasicBlock {
+ public:
+  explicit NonWritableBasicBlock(llvm::BasicBlock* basic_block)
+    : basic_block_(basic_block)
+  {}
+
+  const llvm::BasicBlock* get() { return basic_block_; }
+
+  void BranchTo(LlvmBuilder* builder) const;
+  void CondBranchToAsTrue(LlvmBuilder* builder, llvm::Value* condition,
+      const NonWritableBasicBlock& false_block) const;
+  void CondBranchToAsFalse(LlvmBuilder* builder, llvm::Value* condition,
+      const NonWritableBasicBlock& true_block) const;
+ private:
+  llvm::BasicBlock* basic_block_;
+};
+
+
+/// This class is used in conversions to and from 'CodegenAnyVal', i.e. 'AnyVal' objects
+/// in codegen code. This class is an interface between sources and destinations: sources
+/// generate an instance of this class and destinations take that instance and use it to
 /// write the value.
 ///
 /// The other side can for example be tuples from which we read (in the
@@ -61,37 +88,95 @@ class LlvmCodeGen;
 /// be filled by the source so that the destination can use them to generate IR code.
 /// Other fields, such as 'fn_ctx_idx' and 'eval' may be needed in some cases but not in
 /// others.
-struct CodegenAnyValReadWriteInfo {
-  LlvmCodeGen* codegen = nullptr;
-  LlvmBuilder* builder = nullptr;
-  const ColumnType* type = nullptr;
+class CodegenAnyValReadWriteInfo {
+ public:
+  // Used for String and collection types.
+  struct PtrLenStruct {
+    llvm::Value* ptr = nullptr;
+    llvm::Value* len = nullptr;
+  };
 
-  int fn_ctx_idx = -1;
-  llvm::Value* eval = nullptr; // Pointer to the ScalarExprEvaluator in LLVM code.
+  // Used for Timestamp.
+  struct TimestampStruct {
+    llvm::Value* time_of_day = nullptr;
+    llvm::Value* date = nullptr;
+  };
+
+  CodegenAnyValReadWriteInfo(LlvmCodeGen* codegen, LlvmBuilder* builder,
+      const ColumnType& type)
+    : codegen_(codegen),
+      builder_(builder),
+      type_(type)
+  {
+    DCHECK(codegen != nullptr);
+    DCHECK(builder != nullptr);
+  }
+
+  LlvmCodeGen* codegen() const { return codegen_; }
+  LlvmBuilder* builder() const { return builder_; }
+  const ColumnType& type() const {return type_; }
+
+  llvm::Value* GetSimpleVal() const;
+  const PtrLenStruct& GetPtrAndLen() const;
+  const TimestampStruct& GetTimeAndDate() const;
+
+  llvm::Value* GetEval() const { return eval_; }
+  int GetFnCtxIdx() const { return fn_ctx_idx_; }
+
+  NonWritableBasicBlock entry_block() const {
+    return NonWritableBasicBlock(entry_block_);
+  }
+
+  llvm::BasicBlock* null_block() const { return null_block_; }
+  llvm::BasicBlock* non_null_block() const { return non_null_block_; }
+
+  // Only one setter should only be called in the lifetime of this object as changing the
+  // type is not supported. The same setter can be called multiple times.
+  void SetSimpleVal(llvm::Value* val);
+  void SetPtrAndLen(llvm::Value* ptr, llvm::Value* len);
+  void SetTimeAndDate(llvm::Value* time_of_day, llvm::Value* date);
+
+  void SetEval(llvm::Value* eval);
+  void SetFnCtxIdx(int fn_ctx_idx);
+
+  void SetBlocks(llvm::BasicBlock* entry_block, llvm::BasicBlock* null_block,
+      llvm::BasicBlock* non_null_block);
+
+  const std::vector<CodegenAnyValReadWriteInfo>& children() const { return children_; }
+  std::vector<CodegenAnyValReadWriteInfo>& children() { return children_; }
+ private:
+  LlvmCodeGen* const codegen_;
+  LlvmBuilder* const builder_;
+  const ColumnType& type_;
 
   // Possible parts the resulting value may be composed of.
+  // TODO: When we switch to C++17, we could use an std::variant instead.
+
   // Simple native types
-  llvm::Value* val = nullptr;
-
-  // String and collection types
-  llvm::Value* ptr = nullptr;
-  llvm::Value* len = nullptr;
-
+  llvm::Value* val_ = nullptr;
+  // String and collection types.
+  PtrLenStruct ptr_len_struct_;
   // Timestamp
-  llvm::Value* time_of_day = nullptr;
-  llvm::Value* date = nullptr;
+  TimestampStruct timestamp_struct_;
 
-  llvm::BasicBlock* entry_block = nullptr;
+  // Pointer to the ScalarExprEvaluator in LLVM code.
+  llvm::Value* eval_ = nullptr;
+
+  // Index of the FunctionContext belonging to this value, in the ScalarExprEvaluator.
+  int fn_ctx_idx_ = -1;
+
+  // The block where codegen'd code for this object begins.
+  llvm::BasicBlock* entry_block_ = nullptr;
 
   // The block we branch to if the read value is null.
-  llvm::BasicBlock* null_block = nullptr;
+  llvm::BasicBlock* null_block_ = nullptr;
 
   // The block we branch to if the read value is not null.
-  llvm::BasicBlock* non_null_block = nullptr;
+  llvm::BasicBlock* non_null_block_ = nullptr;
 
   // Vector of 'CodegenAnyValReadWriteInfo's for children in case this one refers to a
   // struct.
-  std::vector<CodegenAnyValReadWriteInfo> children;
+  std::vector<CodegenAnyValReadWriteInfo> children_;
 };
 
 } // namespace impala

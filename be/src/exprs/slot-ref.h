@@ -102,7 +102,7 @@ class SlotRef : public ScalarExpr {
       llvm::Value* row_ptr,
       llvm::BasicBlock* entry_block = nullptr);
   CodegenAnyValReadWriteInfo CodegenReadSlot(LlvmCodeGen* codegen, LlvmBuilder* builder,
-      llvm::Value* eval_ptr, llvm::Value* row_ptr,
+      llvm::Value* eval_ptr, llvm::Value* row_ptr, llvm::BasicBlock* entry_block,
       llvm::BasicBlock* null_block, llvm::BasicBlock* read_slot_block,
       llvm::Value* tuple_ptr, llvm::Value* slot_offset);
 };

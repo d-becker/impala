@@ -19,7 +19,6 @@
 
 #include "codegen/codegen-util.h"
 #include "llvm/IR/BasicBlock.h"
-#include "llvm/IR/LLVMContext.h"
 #include "runtime/multi-precision.h"
 #include "runtime/raw-value.h"
 #include "common/names.h"
@@ -806,12 +805,12 @@ CodegenAnyVal CodegenAnyVal::GetNonNullVal(LlvmCodeGen* codegen, LlvmBuilder* bu
 llvm::BasicBlock* CodegenAnyVal::CreateStructValFromReadWriteInfo(
     const CodegenAnyValReadWriteInfo& read_write_info,
     llvm::Value** ptr, llvm::Value** len, llvm::BasicBlock* struct_produce_value_block) {
-  LlvmCodeGen* codegen = read_write_info.codegen;
-  LlvmBuilder* builder = read_write_info.builder;
+  LlvmCodeGen* codegen = read_write_info.codegen();
+  LlvmBuilder* builder = read_write_info.builder();
 
-  DCHECK(read_write_info.type->IsStructType() && read_write_info.children.size() > 0);
-  DCHECK(read_write_info.eval != nullptr);
-  DCHECK_GT(read_write_info.fn_ctx_idx, -1);
+  DCHECK(read_write_info.type().IsStructType() && read_write_info.children().size() > 0);
+  DCHECK(read_write_info.GetEval() != nullptr);
+  DCHECK_GT(read_write_info.GetFnCtxIdx(), -1);
 
   // Cross-compiled functions this hand-crafted function will call.
   llvm::Function* const get_func_ctx_fn =
@@ -821,11 +820,11 @@ llvm::BasicBlock* CodegenAnyVal::CreateStructValFromReadWriteInfo(
   llvm::Function* const store_result_in_eval_fn =
          codegen->GetFunction(IRFunction::STORE_RESULT_IN_EVALUATOR, false);
 
-  builder->SetInsertPoint(read_write_info.non_null_block);
-  std::size_t num_children = read_write_info.children.size();
+  builder->SetInsertPoint(read_write_info.non_null_block());
+  std::size_t num_children = read_write_info.children().size();
   DCHECK_GT(num_children, 0);
   llvm::Value* fn_ctx = builder->CreateCall(get_func_ctx_fn,
-      {read_write_info.eval, codegen->GetI32Constant(read_write_info.fn_ctx_idx)},
+      {read_write_info.GetEval(), codegen->GetI32Constant(read_write_info.GetFnCtxIdx())},
       "fn_ctx");
 
   // Allocate a buffer for the child pointers. If allocalion fails, the struct will be
@@ -838,26 +837,24 @@ llvm::BasicBlock* CodegenAnyVal::CreateStructValFromReadWriteInfo(
   llvm::Value* buffer_is_null = builder->CreateIsNull(
       cast_children_ptrs_buffer, "buffer_is_null");
 
-  llvm::BasicBlock* child_block = read_write_info.children[0].entry_block;
-  DCHECK(child_block != nullptr);
-  builder->CreateCondBr(buffer_is_null, read_write_info.null_block, child_block);
-  builder->SetInsertPoint(child_block);
+  // Branch based on 'buffer_is_null'.
+  read_write_info.children()[0].entry_block().CondBranchToAsFalse(builder, buffer_is_null,
+      NonWritableBasicBlock(read_write_info.null_block()));
   for (std::size_t i = 0; i < num_children; ++i) {
     const CodegenAnyValReadWriteInfo& child_codegen_value_read_write_info =
-        read_write_info.children[i];
+        read_write_info.children()[i];
     CodegenAnyVal child_any_val =
         CreateFromReadWriteInfo(child_codegen_value_read_write_info);
 
+    const ColumnType& child_type = child_codegen_value_read_write_info.type();
     llvm::Value* child_any_val_ptr = child_any_val.GetAnyValPtr("child_ptr");
-    llvm::Value* child_primitive_type = codegen->GetI32Constant(
-        child_codegen_value_read_write_info.type->type);
-    llvm::Value* child_byte_size = codegen->GetI32Constant(
-        child_codegen_value_read_write_info.type->GetByteSize());
+    llvm::Value* child_primitive_type = codegen->GetI32Constant(child_type.type);
+    llvm::Value* child_byte_size = codegen->GetI32Constant(child_type.GetByteSize());
 
     // Convert and store the child in the corresponding ScalarExprEvaluator - this takes
     // care of the lifetime of the object.
     llvm::Value* stored_child_ptr = builder->CreateCall(store_result_in_eval_fn,
-        {child_codegen_value_read_write_info.eval, child_any_val_ptr,
+        {child_codegen_value_read_write_info.GetEval(), child_any_val_ptr,
         child_primitive_type, child_byte_size},
         "stored_value");
 
@@ -869,10 +866,7 @@ llvm::BasicBlock* CodegenAnyVal::CreateStructValFromReadWriteInfo(
 
     if (i < num_children - 1) {
       // Do not add a new block after the last child.
-      child_block = read_write_info.children[i+1].entry_block;
-      DCHECK(child_block != nullptr);
-      builder->CreateBr(child_block);
-      builder->SetInsertPoint(child_block);
+      read_write_info.children()[i+1].entry_block().BranchTo(builder);
     }
   }
 
@@ -901,24 +895,23 @@ llvm::PHINode* CodegenPHINode(LlvmBuilder* builder, llvm::Value* non_null_val,
   return res;
 }
 
-
 CodegenAnyVal CodegenAnyVal::CreateFromReadWriteInfo(
     const CodegenAnyValReadWriteInfo& read_write_info) {
-  LlvmCodeGen* codegen = read_write_info.codegen;
-  LlvmBuilder* builder = read_write_info.builder;
-  const ColumnType& type = *read_write_info.type;
+  LlvmCodeGen* codegen = read_write_info.codegen();
+  LlvmBuilder* builder = read_write_info.builder();
+  const ColumnType& type = read_write_info.type();
 
   llvm::LLVMContext& context = codegen->context();
-  llvm::Function* fn = read_write_info.non_null_block->getParent();
+  llvm::Function* fn = read_write_info.non_null_block()->getParent();
 
   llvm::BasicBlock* produce_value_block =
       llvm::BasicBlock::Create(context, "produce_value", fn);
 
-  builder->SetInsertPoint(read_write_info.null_block);
+  builder->SetInsertPoint(read_write_info.null_block());
   builder->CreateBr(produce_value_block);
 
   if (!type.IsStructType()) {
-    builder->SetInsertPoint(read_write_info.non_null_block);
+    builder->SetInsertPoint(read_write_info.non_null_block());
     builder->CreateBr(produce_value_block);
   }
 
@@ -928,15 +921,18 @@ CodegenAnyVal CodegenAnyVal::CreateFromReadWriteInfo(
   // For structs the code that reads the value consists of multiple basic blocks, so the
   // block that should branch to 'produce_value_block' is not
   // 'read_write_info.non_null_block'. This variable is set to the appropriate block.
-  llvm::BasicBlock* non_null_incoming_block = read_write_info.non_null_block;
+  llvm::BasicBlock* non_null_incoming_block = read_write_info.non_null_block();
   if (type.IsStringType() || type.type == TYPE_FIXED_UDA_INTERMEDIATE
       || type.IsCollectionType() || type.IsStructType()) {
-    llvm::Value* ptr = read_write_info.ptr;
-    llvm::Value* len = read_write_info.len;
+    llvm::Value* ptr = nullptr;
+    llvm::Value* len = nullptr;
 
     if (type.IsStructType()) {
       non_null_incoming_block = CreateStructValFromReadWriteInfo(
           read_write_info, &ptr, &len, produce_value_block);
+    } else {
+      ptr = read_write_info.GetPtrAndLen().ptr;
+      len = read_write_info.GetPtrAndLen().len;
     }
 
     DCHECK(ptr != nullptr);
@@ -944,33 +940,34 @@ CodegenAnyVal CodegenAnyVal::CreateFromReadWriteInfo(
 
     llvm::Value* ptr_null = llvm::Constant::getNullValue(ptr->getType());
     llvm::PHINode* ptr_phi = CodegenPHINode(builder, ptr, ptr_null,
-        non_null_incoming_block, read_write_info.null_block);
+        non_null_incoming_block, read_write_info.null_block());
 
     llvm::Value* len_null = llvm::ConstantInt::get(len->getType(), 0);
     llvm::PHINode* len_phi = CodegenPHINode(builder, len, len_null,
-        non_null_incoming_block, read_write_info.null_block);
+        non_null_incoming_block, read_write_info.null_block());
 
     result.SetPtr(ptr_phi);
     result.SetLen(len_phi);
   } else if (type.type == TYPE_TIMESTAMP) {
-    DCHECK(read_write_info.time_of_day != nullptr);
-    DCHECK(read_write_info.date != nullptr);
-
     llvm::Value* time_of_day_null = llvm::ConstantInt::get(
-        read_write_info.time_of_day->getType(), 0);
-    llvm::PHINode* time_of_day_phi = CodegenPHINode(builder, read_write_info.time_of_day,
-        time_of_day_null, non_null_incoming_block, read_write_info.null_block);
+        read_write_info.GetTimeAndDate().time_of_day->getType(), 0);
+    llvm::PHINode* time_of_day_phi = CodegenPHINode(builder,
+        read_write_info.GetTimeAndDate().time_of_day, time_of_day_null,
+        non_null_incoming_block, read_write_info.null_block());
 
-    llvm::Value* date_null = llvm::ConstantInt::get(read_write_info.date->getType(), 0);
-    llvm::PHINode* date_phi = CodegenPHINode(builder, read_write_info.date, date_null,
-        non_null_incoming_block, read_write_info.null_block);
+    llvm::Value* date_null = llvm::ConstantInt::get(
+        read_write_info.GetTimeAndDate().date->getType(), 0);
+    llvm::PHINode* date_phi = CodegenPHINode(builder,
+        read_write_info.GetTimeAndDate().date, date_null, non_null_incoming_block,
+        read_write_info.null_block());
 
     result.SetTimeOfDay(time_of_day_phi);
     result.SetDate(date_phi);
   } else {
-    llvm::Value* null = llvm::Constant::getNullValue(read_write_info.val->getType());
-    llvm::PHINode* val_phi = CodegenPHINode(builder, read_write_info.val, null,
-        non_null_incoming_block, read_write_info.null_block);
+    llvm::Value* null = llvm::Constant::getNullValue(
+        read_write_info.GetSimpleVal()->getType());
+    llvm::PHINode* val_phi = CodegenPHINode(builder, read_write_info.GetSimpleVal(), null,
+        non_null_incoming_block, read_write_info.null_block());
 
     result.SetVal(val_phi);
   }
@@ -982,7 +979,7 @@ CodegenAnyVal CodegenAnyVal::CreateFromReadWriteInfo(
   llvm::IRBuilderBase::InsertPoint ip = builder->saveIP();
   builder->SetInsertPoint(produce_value_block, produce_value_block->begin());
   llvm::PHINode* is_null_phi = CodegenPHINode(builder, zero, one, non_null_incoming_block,
-      read_write_info.null_block, "is_null_phi");
+      read_write_info.null_block(), "is_null_phi");
   builder->restoreIP(ip);
   result.SetIsNull(is_null_phi);
   return result;
@@ -994,11 +991,7 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
   llvm::LLVMContext& context = codegen_->context();
   llvm::Function* fn = builder_->GetInsertBlock()->getParent();
 
-  CodegenAnyValReadWriteInfo res;
-
-  res.codegen = codegen_;
-  res.builder = builder_;
-  res.type = &type_;
+  CodegenAnyValReadWriteInfo res(codegen_, builder_, type_);
 
   llvm::BasicBlock* entry_block = llvm::BasicBlock::Create(context, "entry", fn);
   builder_->SetInsertPoint(entry_block);
@@ -1013,18 +1006,14 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
   if (type_.IsStructType()) {
     StructToReadWriteInfo(&res, GetPtr());
   } else if (type_.IsStringType() || type_.IsCollectionType()) {
-    res.ptr = GetPtr();
-    res.len = GetLen();
+    res.SetPtrAndLen(GetPtr(), GetLen());
   } else if (type_.type == TYPE_TIMESTAMP) {
-    res.time_of_day = GetTimeOfDay();
-    res.date = GetDate();
+    res.SetTimeAndDate(GetTimeOfDay(), GetDate());
   } else {
-    res.val = GetVal();
+    res.SetSimpleVal(GetVal());
   }
 
-  res.entry_block = entry_block;
-  res.null_block = null_block;
-  res.non_null_block = non_null_block;
+  res.SetBlocks(entry_block, null_block, non_null_block);
 
   builder_->restoreIP(ip);
   return res;
@@ -1032,8 +1021,8 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
 
 void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_write_info,
     const ColumnType& type, llvm::Value* child_ptr) {
-  LlvmCodeGen* codegen = read_write_info->codegen;
-  LlvmBuilder* builder = read_write_info->builder;
+  LlvmCodeGen* codegen = read_write_info->codegen();
+  LlvmBuilder* builder = read_write_info->builder();
   llvm::Type* slot_type = codegen->GetSlotType(type);
 
   // Children are stored in one of the members of an 'ExprValue' belonging to the
@@ -1052,15 +1041,17 @@ void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_
     case TYPE_ARRAY: { // CollectionVal has the same memory layout as StringVal.
       llvm::Value* ptr_addr = builder->CreateStructGEP(
           nullptr, cast_child_ptr, 0, "ptr_addr");
-      read_write_info->ptr = builder->CreateLoad(ptr_addr, "ptr");
+      llvm::Value* ptr = builder->CreateLoad(ptr_addr, "ptr");
 
+      llvm::Value* len;
       if (type.type == TYPE_CHAR) {
-        read_write_info->len = codegen->GetI32Constant(type.len);
+        len = codegen->GetI32Constant(type.len);
       } else {
         llvm::Value* len_addr = builder->CreateStructGEP(
             nullptr, cast_child_ptr, 1, "len_addr");
-        read_write_info->len = builder->CreateLoad(len_addr, "len");
+        len = builder->CreateLoad(len_addr, "len");
       }
+      read_write_info->SetPtrAndLen(ptr, len);
       break;
     }
     case TYPE_FIXED_UDA_INTERMEDIATE:
@@ -1072,13 +1063,15 @@ void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_
           nullptr, cast_child_ptr, 0, "time_of_day_addr");
       llvm::Value* time_of_day_addr_lowered = builder->CreateBitCast(
           time_of_day_addr, codegen->i64_ptr_type(), "time_of_day_addr");
-      read_write_info->time_of_day = builder->CreateLoad(time_of_day_addr_lowered, "time_of_day");
+      llvm::Value* time_of_day = builder->CreateLoad(
+          time_of_day_addr_lowered, "time_of_day");
 
       llvm::Value* date_addr = builder->CreateStructGEP(
           nullptr, cast_child_ptr, 1, "date_addr");
       llvm::Value* date_addr_lowered = builder->CreateBitCast(
           date_addr, codegen->i32_ptr_type(), "date_addr_lowered");
-      read_write_info->date = builder->CreateLoad(date_addr_lowered, "date");
+      llvm::Value* date = builder->CreateLoad(date_addr_lowered, "date");
+      read_write_info->SetTimeAndDate(time_of_day, date);
       break;
     }
     case TYPE_BOOLEAN:
@@ -1092,7 +1085,7 @@ void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_
     case TYPE_DATE: {
       // The representations of the types match - just take the value.
       llvm::Value* child = builder->CreateLoad(child_type, cast_child_ptr, "child");
-      read_write_info->val = child;
+      read_write_info->SetSimpleVal(child);
       break;
     }
     default:
@@ -1104,12 +1097,12 @@ void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_
 void CodegenAnyVal::StructToReadWriteInfo(
     CodegenAnyValReadWriteInfo* read_write_info,
     llvm::Value* children_ptr) {
-  const ColumnType& type = *read_write_info->type;
+  const ColumnType& type = read_write_info->type();
   DCHECK(type.IsStructType());
 
-  LlvmCodeGen* codegen = read_write_info->codegen;
+  LlvmCodeGen* codegen = read_write_info->codegen();
   llvm::LLVMContext& context = codegen->context();
-  LlvmBuilder* builder = read_write_info->builder;
+  LlvmBuilder* builder = read_write_info->builder();
   llvm::Function* fn = builder->GetInsertBlock()->getParent();
 
   llvm::Value* cast_children_ptr = builder->CreateBitCast(
@@ -1117,10 +1110,7 @@ void CodegenAnyVal::StructToReadWriteInfo(
 
   for (int i = 0; i < type.children.size(); ++i) {
     const ColumnType& child_type = type.children[i];
-    CodegenAnyValReadWriteInfo child_read_write_info;
-    child_read_write_info.codegen = codegen;
-    child_read_write_info.builder = builder;
-    child_read_write_info.type = &child_type;
+    CodegenAnyValReadWriteInfo child_read_write_info(codegen, builder, child_type);
 
     llvm::BasicBlock* child_entry_block = llvm::BasicBlock::Create(context, "entry", fn);
 
@@ -1152,9 +1142,7 @@ void CodegenAnyVal::StructToReadWriteInfo(
       StructChildToReadWriteInfo(&child_read_write_info, child_type, child_ptr);
     }
 
-    child_read_write_info.entry_block = child_entry_block;
-    child_read_write_info.null_block = null_block;
-    child_read_write_info.non_null_block = non_null_block;
-    read_write_info->children.push_back(child_read_write_info);
+    child_read_write_info.SetBlocks(child_entry_block, null_block, non_null_block);
+    read_write_info->children().push_back(child_read_write_info);
   }
 }

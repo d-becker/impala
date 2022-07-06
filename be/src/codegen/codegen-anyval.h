@@ -243,7 +243,8 @@ class CodegenAnyVal {
   LlvmBuilder* builder() const { return builder_; }
   const ColumnType& type() { return type_; }
 
-  static CodegenAnyVal CreateFromReadWriteInfo(const CodegenAnyValReadWriteInfo& read_write_info);
+  static CodegenAnyVal CreateFromReadWriteInfo(
+      const CodegenAnyValReadWriteInfo& read_write_info);
 
   // Generate a 'CodegenAnyValReadWriteInfo' so that a destination can use it to write the
   // value.

@@ -1019,7 +1019,8 @@ CodegenAnyValReadWriteInfo CodegenAnyVal::ToReadWriteInfo() {
   return res;
 }
 
-void CodegenAnyVal::StructChildToReadWriteInfo(CodegenAnyValReadWriteInfo* read_write_info,
+void CodegenAnyVal::StructChildToReadWriteInfo(
+    CodegenAnyValReadWriteInfo* read_write_info,
     const ColumnType& type, llvm::Value* child_ptr) {
   LlvmCodeGen* codegen = read_write_info->codegen();
   LlvmBuilder* builder = read_write_info->builder();

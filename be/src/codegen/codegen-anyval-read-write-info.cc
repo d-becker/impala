@@ -80,7 +80,8 @@ void CodegenAnyValReadWriteInfo::SetPtrAndLen(llvm::Value* ptr, llvm::Value* len
   ptr_len_struct_.len = len;
 }
 
-void CodegenAnyValReadWriteInfo::SetTimeAndDate(llvm::Value* time_of_day, llvm::Value* date) {
+void CodegenAnyValReadWriteInfo::SetTimeAndDate(llvm::Value* time_of_day,
+    llvm::Value* date) {
   DCHECK(val_ == nullptr);
   DCHECK(ptr_len_struct_.ptr == nullptr);
   DCHECK(ptr_len_struct_.len == nullptr);

@@ -140,7 +140,7 @@ class TestNestedStructsInSelectList(ImpalaTestSuite):
         ImpalaTestDimension('mt_dop', 0, 2))
     cls.ImpalaTestMatrix.add_dimension(
         create_exec_option_dimension_from_dict({
-            'disable_codegen': ['True','False']}))
+            'disable_codegen': ['True', 'False']}))
     cls.ImpalaTestMatrix.add_dimension(create_client_protocol_dimension())
     cls.ImpalaTestMatrix.add_constraint(lambda v:
         v.get_value('protocol') == 'hs2')

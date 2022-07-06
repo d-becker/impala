@@ -789,7 +789,8 @@ llvm::Value* HashTableCtx::CodegenConvertToCanonicalForm(LlvmCodeGen* codegen,
   }
 }
 
-void HashTableCtx::CodegenConvertToCanonicalForm(CodegenAnyValReadWriteInfo* read_write_info) {
+void HashTableCtx::CodegenConvertToCanonicalForm(
+    CodegenAnyValReadWriteInfo* read_write_info) {
   // Convert the value to a bit pattern that is unambiguous.
   // Specifically, for floating point type values, NaN values are converted to
   // the same bit pattern, and -0 is converted to +0.
@@ -806,7 +807,8 @@ void HashTableCtx::CodegenConvertToCanonicalForm(CodegenAnyValReadWriteInfo* rea
   }
 }
 
-void HashTableCtx::CodegenConvertToCanonicalForm(LlvmBuilder* builder, CodegenAnyVal* anyval) {
+void HashTableCtx::CodegenConvertToCanonicalForm(LlvmBuilder* builder,
+    CodegenAnyVal* anyval) {
   switch(anyval->type().type) {
     case TYPE_FLOAT:
     case TYPE_DOUBLE: {

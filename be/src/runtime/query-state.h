@@ -469,7 +469,7 @@ class QueryState {
   int64_t failed_report_time_ms_ = 0;
 
   /// Indicator of whether to disable the codegen cache for the query.
-  bool disable_codegen_cache_ = false;
+  bool disable_codegen_cache_ = true;
 
   /// Create QueryState w/ a refcnt of 0 and a memory limit of 'mem_limit' bytes applied
   /// to the query mem tracker. The query is associated with the resource pool set in

@@ -464,7 +464,7 @@ struct TQueryOptions {
       [PlanNodes.TRuntimeFilterType.BLOOM, PlanNodes.TRuntimeFilterType.MIN_MAX];
 
   // See comment in ImpalaService.thrift
-  105: optional bool async_codegen = false;
+  105: optional bool async_codegen = true;
 
   // See comment in ImpalaService.thrift
   106: optional bool enable_distinct_semi_join_optimization = true;

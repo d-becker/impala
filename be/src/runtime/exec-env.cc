@@ -101,7 +101,7 @@ DEFINE_int32(admission_control_slots, 0,
     "this backend. The degree of parallelism of the query determines the number of slots "
     "that it needs. Defaults to number of cores / -num_cores for executors, and 8x that "
     "value for dedicated coordinators).");
-DEFINE_string(codegen_cache_capacity, "1GB",
+DEFINE_string(codegen_cache_capacity, "0",
     "Specify the capacity of the codegen cache. If set to 0, codegen cache is disabled.");
 
 DEFINE_bool(use_local_catalog, false,

@@ -137,6 +137,7 @@ string LlvmCodeGen::cpu_name_;
 std::unordered_set<string> LlvmCodeGen::cpu_attrs_;
 string LlvmCodeGen::target_features_attr_;
 CodegenCallGraph LlvmCodeGen::shared_call_graph_;
+LlvmCodeGen::AsyncCodeGenThreadCounter LlvmCodeGen::async_codegen_thread_counter_;
 
 const map<int64_t, std::string> LlvmCodeGen::cpu_flag_mappings_{
     {CpuInfo::SSSE3, "+ssse3"}, {CpuInfo::SSE4_1, "+sse4.1"},
@@ -1358,6 +1359,11 @@ Status LlvmCodeGen::FinalizeModule() {
 
 Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_sequence) {
   DCHECK(event_sequence != nullptr);
+
+  if (!async_codegen_thread_counter_.TryAcquire()) {
+    return FinalizeModule();
+  }
+
   Status thread_start_status = Thread::Create("async-codegen", "async-codegen",
       [this, event_sequence]() {
         SCOPED_THREAD_COUNTER_MEASUREMENT(compile_thread_counters_);
@@ -1373,6 +1379,8 @@ Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_seq
         auto log_level = status.ok() ? 2 : 1;
         event_sequence->MarkEvent("AsyncCodegenFinished");
         VLOG(log_level) << "Finished async code generation with result: " << status;
+
+        async_codegen_thread_counter_.Release();
       }, &async_compile_thread_);
 
   event_sequence->MarkEvent("AsyncCodegenStarted");

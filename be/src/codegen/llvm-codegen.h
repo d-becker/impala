@@ -886,6 +886,34 @@ class LlvmCodeGen {
 
   std::unique_ptr<Thread> async_compile_thread_;
 
+  class AsyncCodeGenThreadCounter {
+    public:
+      AsyncCodeGenThreadCounter()
+          : available_threads_(GLOBAL_MAX_ASYNC_COMPILE_THREADS), mutex_{}
+      {}
+
+      bool TryAcquire() {
+        std::lock_guard<std::mutex> lock_guard(mutex_);
+        if (available_threads_ > 0) {
+          --available_threads_;
+          return true;
+        }
+        return false;
+      }
+
+      void Release() {
+        std::lock_guard<std::mutex> lock_guard(mutex_);
+        ++available_threads_;
+        DCHECK_LE(available_threads_, GLOBAL_MAX_ASYNC_COMPILE_THREADS);
+      }
+    private:
+      static constexpr int GLOBAL_MAX_ASYNC_COMPILE_THREADS = 4;
+      int available_threads_;
+      std::mutex mutex_;
+  };
+
+  static AsyncCodeGenThreadCounter async_codegen_thread_counter_;
+
   /// whether or not optimizations are enabled
   bool optimizations_enabled_;
 

@@ -19,6 +19,7 @@
 #include "codegen/llvm-codegen-cache.h"
 
 #include <fstream>
+#include <memory>
 #include <mutex>
 #include <sstream>
 #include <unordered_set>
@@ -147,8 +148,7 @@ const map<int64_t, std::string> LlvmCodeGen::cpu_flag_mappings_{
     {~(CpuInfo::AVX), "-avx"}, {~(CpuInfo::AVX2), "-avx2"},
     {~(CpuInfo::PCLMULQDQ), "-pclmul"}};
 
-CallableThreadPool LlvmCodeGen::async_codegen_thread_pool_(
-    "async_codegen_thread_pool", "async_codegen_thread_pool", 4, 8);
+std::unique_ptr<CallableThreadPool> LlvmCodeGen::async_codegen_thread_pool_(nullptr);
 
 [[noreturn]] static void LlvmCodegenHandleError(
     void* user_data, const string& reason, bool gen_crash_diag) {
@@ -213,7 +213,10 @@ Status LlvmCodeGen::InitializeLlvm(const char* procname, bool load_backend) {
   init_codegen->Close();
 
   // Initialize the async codegen thread pool.
-  RETURN_IF_ERROR(async_codegen_thread_pool_.Init());
+  // TODO: Can we ensure that CpuInfo::Init() has already been called?
+  async_codegen_thread_pool_ = std::make_unique<CallableThreadPool>(
+      "async_codegen_thread_pool", "async_codegen_thread_pool", CpuInfo::num_cores(), 8);
+  RETURN_IF_ERROR(async_codegen_thread_pool_->Init());
   return Status::OK();
 }
 
@@ -1409,7 +1412,7 @@ Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_seq
     VLOG(log_level) << "Finished async code generation with result: " << status;
   };
 
-  const bool offer_success = async_codegen_thread_pool_.Offer(func);
+  const bool offer_success = async_codegen_thread_pool_->Offer(func);
   if (offer_success) event_sequence->MarkEvent("AsyncCodegenEnqueued");
 
   const Status threadpool_status = offer_success ?

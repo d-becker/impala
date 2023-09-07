@@ -885,7 +885,7 @@ class LlvmCodeGen {
   /// 'ir_generation_timer_' and hence is also updated by FragmentInstanceState.
   RuntimeProfile::ThreadCounters* llvm_thread_counters_;
 
-  static CallableThreadPool async_codegen_thread_pool_;
+  static std::unique_ptr<CallableThreadPool> async_codegen_thread_pool_;
 
   /// Set to true before enqueueing an async codegen task to 'async_codegen_thread_pool_'
   /// and set to false in 'Close'. If async codegen has not started when 'Close' is called

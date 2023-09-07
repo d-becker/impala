@@ -19,6 +19,7 @@
 #include "codegen/llvm-codegen-cache.h"
 
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -214,8 +215,11 @@ Status LlvmCodeGen::InitializeLlvm(const char* procname, bool load_backend) {
 
   // Initialize the async codegen thread pool.
   // TODO: Can we ensure that CpuInfo::Init() has already been called?
+  constexpr uint32_t ASYNC_CODEGEN_THREADPOOL_QUEUE_SIZE =
+      std::numeric_limits<int32_t>::max();
   async_codegen_thread_pool_ = std::make_unique<CallableThreadPool>(
-      "async_codegen_thread_pool", "async_codegen_thread_pool", CpuInfo::num_cores(), 8);
+      "async_codegen_thread_pool", "async_codegen_thread_pool", CpuInfo::num_cores(),
+      ASYNC_CODEGEN_THREADPOOL_QUEUE_SIZE);
   RETURN_IF_ERROR(async_codegen_thread_pool_->Init());
   return Status::OK();
 }
@@ -533,13 +537,19 @@ LlvmCodeGen::~LlvmCodeGen() {
 }
 
 void LlvmCodeGen::Close() {
-  if (waiting_for_async_codegen_ != nullptr) {
-    waiting_for_async_codegen_->store(false);
-  }
+  if (async_codegen_mutex_ != nullptr) {
+    DCHECK(async_codegen_state_ != nullptr);
+    DCHECK(async_codegen_cond_var_ != nullptr);
 
-  std::unique_lock<std::mutex> lock;
-  if (async_codegen_ready_mutex_ != nullptr) {
-    lock = std::unique_lock<std::mutex>(*async_codegen_ready_mutex_);
+    std::unique_lock<std::mutex> lock = std::unique_lock<std::mutex>(
+        *async_codegen_mutex_);
+
+    if (*async_codegen_state_ == AsyncCodegenState::ENQUEUED) {
+      (*async_codegen_state_) = AsyncCodegenState::NO_LONGER_NEEDED;
+    } else if (*async_codegen_state_ == AsyncCodegenState::STARTED) {
+      async_codegen_cond_var_->wait(lock,
+          [this] { return *async_codegen_state_ == AsyncCodegenState::FINISHED; });
+    }
   }
 
   if (memory_manager_ != nullptr) {
@@ -1375,21 +1385,27 @@ Status LlvmCodeGen::FinalizeModule() {
 Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_sequence) {
   DCHECK(event_sequence != nullptr);
 
-  /// We use a local variable to make sure we can capture the shared pointer by value in
-  /// the lambda.
-  std::shared_ptr<std::atomic<bool>> waiting_for_async_codegen =
-      std::make_shared<std::atomic<bool>>(true);
-  waiting_for_async_codegen_ = waiting_for_async_codegen;
-
-  std::shared_ptr<std::mutex> async_codegen_ready_mutex =
+  /// We use local variables to make sure we can capture the shared pointers by
+  /// value in the lambda.
+  /// TODO: Can we avoid this?
+  std::shared_ptr<std::mutex> async_codegen_mutex =
       std::make_shared<std::mutex>();
-  async_codegen_ready_mutex_ = async_codegen_ready_mutex;
+  async_codegen_mutex_ = async_codegen_mutex;
+
+  std::shared_ptr<AsyncCodegenState> async_codegen_state =
+      std::make_shared<AsyncCodegenState>(AsyncCodegenState::ENQUEUED);
+  async_codegen_state_ = async_codegen_state;
+
+  std::shared_ptr<std::condition_variable> async_codegen_cond_var =
+      std::make_shared<std::condition_variable>();
+  async_codegen_cond_var_ = async_codegen_cond_var;
 
   auto func =
-      [this, waiting_for_async_codegen, async_codegen_ready_mutex, event_sequence]() {
-    std::lock_guard<std::mutex> lock(*async_codegen_ready_mutex);
+      [this, async_codegen_mutex, async_codegen_state,
+       async_codegen_cond_var, event_sequence]() {
+    std::lock_guard<std::mutex> lock(*async_codegen_mutex);
 
-    if (!waiting_for_async_codegen->load()) {
+    if (*async_codegen_state == AsyncCodegenState::NO_LONGER_NEEDED) {
       VLOG(google::INFO) << "Async codegen no longer needed, skipping it.";
       return;
     }
@@ -1410,19 +1426,47 @@ Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_seq
     const std::string status_msg = status.ok() ? "OK." : status.msg().msg();
     auto log_level = status.ok() ? google::INFO : google::WARNING;
     VLOG(log_level) << "Finished async code generation with result: " << status;
+
+    // Notify the query execution thread that async codegen is finished.
+    (*async_codegen_state) = AsyncCodegenState::FINISHED;
+    async_codegen_cond_var->notify_all();
   };
 
   const bool offer_success = async_codegen_thread_pool_->Offer(func);
-  if (offer_success) event_sequence->MarkEvent("AsyncCodegenEnqueued");
+  if (!offer_success) {
+    async_codegen_mutex_.reset();
+    async_codegen_state_.reset();
+    async_codegen_cond_var_.reset();
+    // TODO: Add more logging if needed.
+    // TODO: Decide what to do if the task cannot be enqueued.
+    return Status("Enqueuing codegen into threadpool queue failed");
+  }
 
-  const Status threadpool_status = offer_success ?
-      Status::OK() : Status("Enqueuing codegen into threadpool queue failed");
+  event_sequence->MarkEvent("AsyncCodegenEnqueued");
+  VLOG(google::INFO) << "Enqueued codegen.";
 
-  VLOG(google::INFO) << "Enqueueing codegen: " << threadpool_status;
+  std::unique_lock<std::mutex> lock(*async_codegen_mutex_);
 
+  // Wait for codegen to finish - if it finishes in a short time, we shouldn't start
+  // interpreted execution.
+  constexpr int64_t WAIT_FOR_CODEGEN_MS = 100;
+  bool finished = async_codegen_cond_var_->wait_for(lock,
+      std::chrono::milliseconds(WAIT_FOR_CODEGEN_MS),
+      [this] { return *async_codegen_state_ == AsyncCodegenState::FINISHED; });
+
+  lock.release();
+  if (finished) {
+    VLOG(google::INFO) << "Async codegen finished within " << WAIT_FOR_CODEGEN_MS
+        << " ms, interpreted execution not started.";
+  } else {
+    VLOG(google::INFO)
+        << "Starting interpreted execution while waiting for async codegen.";
+  }
+
+  // TODO: Should this be after waiting for codegen a bit? Probably yes.
   RETURN_IF_ERROR(DebugAction(state_->query_options(),
         "AFTER_STARTING_ASYNC_CODEGEN_IN_FRAGMENT_THREAD"));
-  return threadpool_status;
+  return Status::OK();
 }
 
 /// TODO: In asynchronous mode, return early if the query is cancelled or finished.

@@ -907,7 +907,7 @@ class LlvmCodeGen {
         DCHECK_LE(available_threads_, GLOBAL_MAX_ASYNC_COMPILE_THREADS);
       }
     private:
-      static constexpr int GLOBAL_MAX_ASYNC_COMPILE_THREADS = 4;
+      static constexpr int GLOBAL_MAX_ASYNC_COMPILE_THREADS = 8;
       int available_threads_;
       std::mutex mutex_;
   };

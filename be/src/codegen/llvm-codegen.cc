@@ -216,7 +216,9 @@ Status LlvmCodeGen::InitializeLlvm(const char* procname, bool load_backend) {
   // Initialize the async codegen thread pool.
   // TODO: Can we ensure that CpuInfo::Init() has already been called?
   constexpr uint32_t ASYNC_CODEGEN_THREADPOOL_QUEUE_SIZE =
-      std::numeric_limits<int32_t>::max();
+      // TODO.
+      // std::numeric_limits<int32_t>::max();
+      16;
   async_codegen_thread_pool_ = std::make_unique<CallableThreadPool>(
       "async_codegen_thread_pool", "async_codegen_thread_pool", CpuInfo::num_cores(),
       ASYNC_CODEGEN_THREADPOOL_QUEUE_SIZE);

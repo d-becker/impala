@@ -218,7 +218,8 @@ Status LlvmCodeGen::InitializeLlvm(const char* procname, bool load_backend) {
   constexpr uint32_t ASYNC_CODEGEN_THREADPOOL_QUEUE_SIZE =
       // TODO.
       // std::numeric_limits<int32_t>::max();
-      16;
+      // 16;
+      1;
   async_codegen_thread_pool_ = std::make_unique<CallableThreadPool>(
       "async_codegen_thread_pool", "async_codegen_thread_pool", CpuInfo::num_cores(),
       ASYNC_CODEGEN_THREADPOOL_QUEUE_SIZE);
@@ -1407,6 +1408,7 @@ Status LlvmCodeGen::FinalizeModuleAsync(RuntimeProfile::EventSequence* event_seq
        async_codegen_cond_var, event_sequence]() {
     std::lock_guard<std::mutex> lock(*async_codegen_mutex);
 
+    // TODO: Check whether cancelled?
     if (*async_codegen_state == AsyncCodegenState::NO_LONGER_NEEDED) {
       VLOG(google::INFO) << "Async codegen no longer needed, skipping it.";
       return;

@@ -1,0 +1,29 @@
+This directory contains metadata files matching an Iceberg table created with the
+following command
+
+  CREATE TABLE ice_puffin(
+    bool_col BOOLEAN,
+    int_col INT,
+    bigint_col BIGINT,
+    float_col FLOAT,
+    double_col DOUBLE,
+    date_col DATE,
+    string_col STRING,
+    timestamp_col TIMESTAMP)
+  STORED BY ICEBERG";
+
+The metadata.json and the avro files are taken from a table created with the above command
+and then truncated (truncation is needed so that a snapshot exists).
+
+The metadata files in the "generated" subdirectory are created with the
+PuffinDataGenerator tool in "java/puffin-data-generator". The metadata.json file here is
+used by that tool as a template.
+To re-generate the metadata files, run the following from the Impala home directory:
+
+  mvn -f "java/puffin-data-generator/pom.xml" exec:java \
+    -Dexec.mainClass="org.apache.impala.puffin_data_generator.PuffinDataGenerator";
+
+This will generate files in the "puffin_files" directory, which must previously be empty
+or non-existent. The generated files can then be copied into the "generated" subdirectory
+here.
+

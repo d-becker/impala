@@ -1,0 +1,213 @@
+{
+  "format-version" : 1,
+  "table-uuid" : "UUID_PLACEHOLDER",
+  "location" : "TABLE_LOCATION_PLACEHOLDER",
+  "last-updated-ms" : 1724933419030,
+  "last-column-id" : 9,
+  "schema" : {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "bool_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 2,
+      "name" : "int_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "bigint_col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 4,
+      "name" : "float_col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 5,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 6,
+      "name" : "decimal_col",
+      "required" : false,
+      "type" : "decimal(9, 0)"
+    }, {
+      "id" : 7,
+      "name" : "date_col",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 8,
+      "name" : "string_col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 9,
+      "name" : "timestamp_col",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  },
+  "current-schema-id" : 0,
+  "schemas" : [ {
+    "type" : "struct",
+    "schema-id" : 0,
+    "fields" : [ {
+      "id" : 1,
+      "name" : "bool_col",
+      "required" : false,
+      "type" : "boolean"
+    }, {
+      "id" : 2,
+      "name" : "int_col",
+      "required" : false,
+      "type" : "int"
+    }, {
+      "id" : 3,
+      "name" : "bigint_col",
+      "required" : false,
+      "type" : "long"
+    }, {
+      "id" : 4,
+      "name" : "float_col",
+      "required" : false,
+      "type" : "float"
+    }, {
+      "id" : 5,
+      "name" : "double_col",
+      "required" : false,
+      "type" : "double"
+    }, {
+      "id" : 6,
+      "name" : "decimal_col",
+      "required" : false,
+      "type" : "decimal(9, 0)"
+    }, {
+      "id" : 7,
+      "name" : "date_col",
+      "required" : false,
+      "type" : "date"
+    }, {
+      "id" : 8,
+      "name" : "string_col",
+      "required" : false,
+      "type" : "string"
+    }, {
+      "id" : 9,
+      "name" : "timestamp_col",
+      "required" : false,
+      "type" : "timestamp"
+    } ]
+  } ],
+  "partition-spec" : [ ],
+  "default-spec-id" : 0,
+  "partition-specs" : [ {
+    "spec-id" : 0,
+    "fields" : [ ]
+  } ],
+  "last-partition-id" : 999,
+  "default-sort-order-id" : 0,
+  "sort-orders" : [ {
+    "order-id" : 0,
+    "fields" : [ ]
+  } ],
+  "properties" : {
+    "engine.hive.enabled" : "true",
+    "impala.events.catalogServiceId" : "173051b01c514e97:b37cf49fa30eb58c",
+    "external.table.purge" : "TRUE",
+    "impala.events.catalogVersion" : "2047",
+    "write.format.default" : "parquet",
+    "hive.metastore.table.owner" : "danielbecker",
+    "OBJCAPABILITIES" : "EXTREAD,EXTWRITE",
+    "storage_handler" : "org.apache.iceberg.mr.hive.HiveIcebergStorageHandler"
+  },
+  "current-snapshot-id" : 1072310337995780425,
+  "refs" : {
+    "main" : {
+      "snapshot-id" : 1072310337995780425,
+      "type" : "branch"
+    }
+  },
+  "snapshots" : [ {
+    "snapshot-id" : 1072310337995780425,
+    "timestamp-ms" : 1724933419020,
+    "summary" : {
+      "operation" : "delete",
+      "changed-partition-count" : "0",
+      "total-records" : "0",
+      "total-files-size" : "0",
+      "total-data-files" : "0",
+      "total-delete-files" : "0",
+      "total-position-deletes" : "0",
+      "total-equality-deletes" : "0"
+    },
+    "manifest-list" : "TABLE_LOCATION_PLACEHOLDER/metadata/snap-1072310337995780425-1-f40f834f-df8a-4220-8377-2d2bd7be1150.avro",
+    "schema-id" : 0
+  } ],
+  "statistics" : [ {
+    "snapshot-id" : 1072310337995780425,
+    "statistics-path" : "TABLE_LOCATION_PLACEHOLDER/metadata/all_stats.stats",
+    "file-size-in-bytes" : 1769,
+    "file-footer-size-in-bytes" : 1269,
+    "blob-metadata" : [ {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 1 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 2 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 3 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 4 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 5 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 6 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 7 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 8 ]
+    }, {
+      "type" : "apache-datasketches-theta-v1",
+      "snapshot-id" : 1072310337995780425,
+      "sequence-number" : 0,
+      "fields" : [ 9 ]
+    } ]
+  } ],
+  "snapshot-log" : [ {
+    "timestamp-ms" : 1724933419020,
+    "snapshot-id" : 1072310337995780425
+  } ],
+  "metadata-log" : [ {
+    "timestamp-ms" : 1724933408872,
+    "metadata-file" : "TABLE_LOCATION_PLACEHOLDER/metadata/00000-1c99980a-c607-443e-925c-086f034ff196.metadata.json"
+  } ]
+}

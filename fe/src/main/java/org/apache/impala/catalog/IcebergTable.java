@@ -36,6 +36,7 @@ import org.apache.impala.analysis.IcebergPartitionSpec;
 import org.apache.impala.analysis.IcebergPartitionTransform;
 import org.apache.impala.catalog.iceberg.GroupedContentFiles;
 import org.apache.impala.common.ImpalaRuntimeException;
+import org.apache.impala.service.BackendConfig;
 import org.apache.impala.thrift.TCatalogObjectType;
 import org.apache.impala.thrift.TCompressionCodec;
 import org.apache.impala.thrift.TGetPartialCatalogObjectRequest;
@@ -61,7 +62,6 @@ import org.apache.thrift.TException;
  * Representation of an Iceberg table in the catalog cache.
  */
 public class IcebergTable extends Table implements FeIcebergTable {
-
   // Alias to the string key that identifies the storage handler for Iceberg tables.
   public static final String KEY_STORAGE_HANDLER =
       hive_metastoreConstants.META_TABLE_STORAGE;
@@ -89,6 +89,9 @@ public class IcebergTable extends Table implements FeIcebergTable {
   // Iceberg table namespace key in tblproperties when using HadoopCatalog,
   // We use database.table instead if this property not been set in SQL
   public static final String ICEBERG_TABLE_IDENTIFIER = "iceberg.table_identifier";
+
+  public static final String ICEBERG_DISABLE_READING_PUFFIN_STATS =
+      "impala.iceberg_disable_reading_puffin_stats";
 
   // Internal Iceberg table property that specifies the absolute path of the current
   // table metadata. This property is only valid for tables in 'hive.catalog'.
@@ -208,6 +211,7 @@ public class IcebergTable extends Table implements FeIcebergTable {
   // The snapshot id cached in the CatalogD, necessary to syncronize the caches.
   private long catalogSnapshotId_ = -1;
 
+  private Map<Integer, IcebergColumn> icebergFieldIdToCol_;
   private Map<String, TIcebergPartitionStats> partitionStats_;
 
   protected IcebergTable(org.apache.hadoop.hive.metastore.api.Table msTable,
@@ -221,6 +225,7 @@ public class IcebergTable extends Table implements FeIcebergTable {
     icebergParquetPlainPageSize_ = Utils.getIcebergParquetPlainPageSize(msTable);
     icebergParquetDictPageSize_ = Utils.getIcebergParquetDictPageSize(msTable);
     hdfsTable_ = new HdfsTable(msTable, db, name, owner);
+    icebergFieldIdToCol_ = new HashMap<>();
   }
 
   /**
@@ -355,6 +360,10 @@ public class IcebergTable extends Table implements FeIcebergTable {
     return partitionStats_;
   }
 
+  public IcebergColumn getColumnByIcebergFieldId(int fieldId) {
+    return icebergFieldIdToCol_.get(fieldId);
+  }
+
   @Override
   public TTable toThrift() {
     TTable table = super.toThrift();
@@ -422,6 +431,7 @@ public class IcebergTable extends Table implements FeIcebergTable {
         partitionStats_ = Utils.loadPartitionStats(this, icebergFiles);
         setIcebergTableStats();
         loadAllColumnStats(msClient, catalogTimeline);
+        applyPuffinStats(catalogTimeline);
         setAvroSchema(msClient, msTbl, fileStore_, catalogTimeline);
       } catch (Exception e) {
         throw new IcebergTableLoadingException("Error loading metadata for Iceberg table "
@@ -450,6 +460,36 @@ public class IcebergTable extends Table implements FeIcebergTable {
     } finally {
       context.stop();
     }
+  }
+
+  private void applyPuffinStats(EventSequence catalogTimeline) {
+    if (BackendConfig.INSTANCE.disableReadingPuffinStats()) return;
+    if (isPuffinStatsReadingDisabledForTable()) return;
+
+    Map<Integer, PuffinStatsLoader.PuffinStatsRecord> puffinNdvs =
+        PuffinStatsLoader.loadPuffinStats(this);
+    for (Map.Entry<Integer, PuffinStatsLoader.PuffinStatsRecord> entry
+        : puffinNdvs.entrySet()) {
+      int fieldId = entry.getKey();
+      long ndv = entry.getValue().ndv;
+
+      // Don't override a possibly existing HMS stat with an explicitly invalid value.
+      if (ndv >= 0) {
+        IcebergColumn col = getColumnByIcebergFieldId(fieldId);
+        Preconditions.checkNotNull(col);
+        col.getStats().setNumDistinctValues(ndv);
+      }
+    }
+
+    if (!puffinNdvs.isEmpty()) {
+      catalogTimeline.markEvent("Loaded Puffin stats");
+    }
+  }
+
+  private boolean isPuffinStatsReadingDisabledForTable() {
+    String val = msTable_.getParameters().get(ICEBERG_DISABLE_READING_PUFFIN_STATS);
+    if (val == null) return false;
+    return Boolean.parseBoolean(val);
   }
 
   /**
@@ -519,11 +559,18 @@ public class IcebergTable extends Table implements FeIcebergTable {
   public void addColumn(Column col) {
     Preconditions.checkState(col instanceof IcebergColumn);
     IcebergColumn iCol = (IcebergColumn) col;
+    icebergFieldIdToCol_.put(iCol.getFieldId(), iCol);
     colsByPos_.add(iCol);
     colsByName_.put(iCol.getName().toLowerCase(), col);
     ((StructType) type_.getItemType()).addField(
         new IcebergStructField(col.getName(), col.getType(), col.getComment(),
             iCol.getFieldId()));
+  }
+
+  @Override
+  public void clearColumns() {
+    super.clearColumns();
+    icebergFieldIdToCol_.clear();
   }
 
   private void addVirtualColumns() {

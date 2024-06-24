@@ -19,13 +19,16 @@ from __future__ import absolute_import, division, print_function
 from builtins import range
 from collections import defaultdict, namedtuple
 import datetime
+import glob
 import logging
 import os
 import pytest
 import pytz
 import random
-
 import re
+import shutil
+import sys
+import tempfile
 import time
 
 from subprocess import check_call, check_output
@@ -1919,6 +1922,170 @@ class TestIcebergV2Table(IcebergTestSuite):
 
   def test_merge_long(self, vector, unique_database):
     self.run_test_case('QueryTest/iceberg-merge-long', vector, unique_database)
+
+
+class TestIcebergTableWithPuffinStats(IcebergTestSuite):
+  """Tests related to Puffin statistics files for Iceberg tables."""
+
+  CREATE_TBL_STMT_TEMPLATE = """CREATE TABLE {} (
+        bool_col BOOLEAN,
+        int_col INT,
+        bigint_col BIGINT,
+        float_col FLOAT,
+        double_col DOUBLE,
+        decimal_col DECIMAL,
+        date_col DATE,
+        string_col STRING,
+        timestamp_col TIMESTAMP) STORED BY ICEBERG"""
+
+  @classmethod
+  def get_workload(cls):
+    return 'functional-query'
+
+  @classmethod
+  def add_test_dimensions(cls):
+    super(TestIcebergTableWithPuffinStats, cls).add_test_dimensions()
+    cls.ImpalaTestMatrix.add_constraint(
+      lambda v: v.get_value('table_format').file_format == 'parquet')
+
+  def test_puffin_stats(self, vector, unique_database):
+    """Tests that Puffin stats are correctly read. The stats we use in this test do not
+    necessarily reflect the actual state of the table."""
+    tbl_name = unique_database + ".ice_puffin_tbl"
+    create_tbl_stmt = self.CREATE_TBL_STMT_TEMPLATE.format(tbl_name)
+    self.execute_query(create_tbl_stmt)
+
+    # Set stats in HMS so we can check that we fall back to that if we don't have Puffin
+    # stats.
+    set_stats_stmt = \
+        "alter table {} set column stats timestamp_col ('numDVs'='2000')".format(tbl_name)
+    self.execute_query(set_stats_stmt)
+
+    tbl_loc = self._get_table_location(tbl_name, vector)
+
+    tbl_properties = self._get_properties("Table Parameters:", tbl_name)
+    uuid = tbl_properties["uuid"]
+    metadata_json_path = tbl_properties["metadata_location"]
+
+    self._copy_files_to_puffin_tbl(tbl_name, tbl_loc, uuid)
+
+    self._check_all_stats_in_1_file(tbl_name, tbl_loc, metadata_json_path)
+    self._check_all_stats_in_2_files(tbl_name, tbl_loc, metadata_json_path)
+    self._check_duplicate_stats_in_1_file(tbl_name, tbl_loc, metadata_json_path)
+    self._check_duplicate_stats_in_2_files(tbl_name, tbl_loc, metadata_json_path)
+    self._check_one_file_current_one_not(tbl_name, tbl_loc, metadata_json_path)
+    self._check_missing_file(tbl_name, tbl_loc, metadata_json_path)
+    self._check_one_file_corrupt_one_not(tbl_name, tbl_loc, metadata_json_path)
+    self._check_all_files_corrupt(tbl_name, tbl_loc, metadata_json_path)
+
+    # Disable reading Puffin stats with a table property.
+    disable_puffin_reading_tbl_prop_stmt = "alter table {} set tblproperties( \
+        'impala.iceberg_disable_reading_puffin_stats'='true')".format(tbl_name)
+    self.execute_query(disable_puffin_reading_tbl_prop_stmt)
+    # Refresh 'metadata_json_path'.
+    tbl_properties = self._get_properties("Table Parameters:", tbl_name)
+    metadata_json_path = tbl_properties["metadata_location"]
+
+    self._check_reading_puffin_stats_disabled_by_tbl_prop(
+        tbl_name, tbl_loc, metadata_json_path)
+
+  def _copy_files_to_puffin_tbl(self, tbl_name, tbl_loc, uuid):
+    version_info = sys.version_info
+    if version_info.major >= 3 and version_info.minor >= 2:
+      with tempfile.TemporaryDirectory() as tmpdir:
+        self._copy_files_to_puffin_tbl_impl(tbl_name, tbl_loc, uuid, tmpdir)
+    else:
+      try:
+        tmpdir = tempfile.mkdtemp()
+        self._copy_files_to_puffin_tbl_impl(tbl_name, tbl_loc, uuid, tmpdir)
+      finally:
+        shutil.rmtree(tmpdir)
+
+  def _copy_files_to_puffin_tbl_impl(self, tbl_name, tbl_loc, uuid, tmpdir):
+    metadata_dir = os.path.join(os.getenv("IMPALA_HOME"), "testdata/ice_puffin")
+    tbl_loc_placeholder = "TABLE_LOCATION_PLACEHOLDER"
+    uuid_placeholder = "UUID_PLACEHOLDER"
+
+    tmp_metadata_dir = tmpdir + "/dir"
+    tmp_generated_metadata_dir = os.path.join(tmp_metadata_dir, "generated")
+    shutil.copytree(metadata_dir, tmp_metadata_dir)
+
+    sed_location_pattern = "s|{}|{}|g".format(tbl_loc_placeholder, tbl_loc)
+    sed_uuid_pattern = "s/{}/{}/g".format(uuid_placeholder, uuid)
+    metadata_json_files = glob.glob(tmp_generated_metadata_dir + "/*metadata.json")
+    for metadata_json in metadata_json_files:
+      check_call(["sed", "-i", "-e", sed_location_pattern,
+                  "-e", sed_uuid_pattern, metadata_json])
+
+    # Move all files from the 'generated' subdirectory to the parent directory so that
+    # all files end up in the same directory on HDFS.
+    mv_cmd = "mv {generated_dir}/* {parent_dir} && rmdir {generated_dir}".format(
+        generated_dir=tmp_generated_metadata_dir, parent_dir=tmp_metadata_dir)
+    check_call(["bash", "-c", mv_cmd])
+
+    # Copy the files to HDFS.
+    self.filesystem_client.copy_from_local(glob.glob(tmp_metadata_dir + "/*"),
+        tbl_loc + "/metadata")
+
+  def _check_all_stats_in_1_file(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "all_stats_in_1_file.metadata.json", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+  def _check_all_stats_in_2_files(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "stats_divided.metadata.json", [1, 2, 3, 4, 5, 6, 7, 8, 9])
+
+  def _check_duplicate_stats_in_1_file(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "duplicate_stats_in_1_file.metadata.json", [1, 2, -1, -1, -1, -1, -1, -1, 2000])
+
+  def _check_duplicate_stats_in_2_files(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "duplicate_stats_in_2_files.metadata.json", [1, 2, 3, -1, -1, -1, -1, -1, 2000])
+
+  def _check_one_file_current_one_not(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "one_file_current_one_not.metadata.json", [1, 2, -1, -1, -1, -1, -1, -1, 2000])
+
+  def _check_missing_file(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "missing_file.metadata.json", [-1, -1, 3, 4, -1, -1, -1, -1, 2000])
+
+  def _check_one_file_corrupt_one_not(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "one_file_corrupt_one_not.metadata.json", [-1, -1, 3, 4, -1, -1, -1, -1, 2000])
+
+  def _check_all_files_corrupt(self, tbl_name, tbl_loc, metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "all_files_corrupt.metadata.json", [-1, -1, -1, -1, -1, -1, -1, -1, 2000])
+
+  def _check_reading_puffin_stats_disabled_by_tbl_prop(self, tbl_name, tbl_loc,
+          metadata_json_path):
+    self._check_scenario(tbl_name, tbl_loc, metadata_json_path,
+        "all_stats_in_1_file.metadata.json", [-1, -1, -1, -1, -1, -1, -1, -1, 2000])
+
+  def _check_scenario(self, tbl_name, tbl_loc, current_metadata_json_path,
+      new_metadata_json_name, expected_ndvs):
+    self._change_metadata_json_file(tbl_name, tbl_loc, current_metadata_json_path,
+        new_metadata_json_name)
+
+    invalidate_metadata_stmt = "invalidate metadata {}".format(tbl_name)
+    self.execute_query(invalidate_metadata_stmt)
+    show_col_stats_stmt = "show column stats {}".format(tbl_name)
+    res = self.execute_query(show_col_stats_stmt)
+
+    ndvs = self._get_ndvs_from_query_result(res)
+    assert expected_ndvs == ndvs
+
+  def _change_metadata_json_file(self, tbl_name, tbl_loc, current_metadata_json_path,
+      new_metadata_json_name):
+    # Overwrite the current metadata.json file with the given file.
+    new_metadata_json_path = os.path.join(tbl_loc, "metadata", new_metadata_json_name)
+    self.filesystem_client.copy(new_metadata_json_path, current_metadata_json_path, True)
+
+  def _get_ndvs_from_query_result(self, query_result):
+    rows = query_result.get_data().split("\n")
+    return [int(row.split()[2]) for row in rows]
 
 
 # Tests to exercise the DIRECTED distribution mode for V2 Iceberg tables. Note, that most

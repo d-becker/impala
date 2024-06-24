@@ -429,6 +429,8 @@ DEFINE_bool(iceberg_always_allow_merge_on_read_operations, false, "Impala can on
     "write delete files with 'merge-on-read'. If this flag is true, Impala allows "
     "executing DELETE, UPDATE and MERGE operations on Iceberg tables even if the table "
     "property is 'copy-on-write'.");
+DEFINE_bool(disable_reading_puffin_stats, false, "If this flag is set to true, "
+    "Impala will not read Iceberg Puffin stats files.");
 
 // Host and port of Statestore Service
 DEFINE_string(state_store_host, "localhost",

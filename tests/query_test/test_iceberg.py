@@ -1961,6 +1961,16 @@ class TestIcebergTableWithPuffinStats(IcebergTestSuite):
         "alter table {} set column stats timestamp_col ('numDVs'='2000')".format(tbl_name)
     self.execute_query(set_stats_stmt)
 
+    ### TODO.
+    invalidate_metadata_stmt = "invalidate metadata {}".format(tbl_name)
+    self.execute_query(invalidate_metadata_stmt)
+    show_col_stats_stmt = "show column stats {}".format(tbl_name)
+    res = self.execute_query(show_col_stats_stmt)
+
+    ndvs = self._get_ndvs_from_query_result(res)
+    assert [-1, -1, -1, -1, -1, -1, -1, -1, 2000] == ndvs
+    ### TODO.
+
     tbl_loc = self._get_table_location(tbl_name, vector)
 
     tbl_properties = self._get_properties("Table Parameters:", tbl_name)

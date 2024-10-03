@@ -483,6 +483,8 @@ public class IcebergTable extends Table implements FeIcebergTable {
 
     if (!puffinNdvs.isEmpty()) {
       catalogTimeline.markEvent("Loaded Puffin stats");
+      // TODO: No logging needed.
+      LOG.info("Read NDVs from Puffin file for table " + msTable_.getTableName() + ": " + puffinNdvs + ".");
     }
   }
 

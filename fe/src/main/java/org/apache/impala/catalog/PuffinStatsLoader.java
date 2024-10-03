@@ -55,6 +55,12 @@ public class PuffinStatsLoader {
       this.blob = blob;
       this.ndv = ndv;
     }
+
+    // TODO: No need for this method.
+    @Override
+    public String toString() {
+      return "{file: " + file + ", blob: " + blob + ", ndv: " + ndv + "}";
+    }
   }
 
   public static Map<Integer, PuffinStatsRecord> loadPuffinStats(IcebergTable iceTable) {
@@ -77,8 +83,9 @@ public class PuffinStatsLoader {
     // be corrupt so we want to remove values already read from it from the overall
     // result.
     List<Integer> fieldIdsFromFile = new ArrayList<>();
-    try {
-      PuffinReader puffinReader = createPuffinReader(statsFile);
+    try (PuffinReader puffinReader = createPuffinReader(statsFile)) {
+      // TODO.
+      // PuffinReader puffinReader = createPuffinReader(statsFile);
       List<BlobMetadata> blobs = getBlobs(puffinReader, currentSnapshotId);
 
       // The 'UncheckedIOException' can be thrown from the 'next()' method of the
@@ -113,10 +120,18 @@ public class PuffinStatsLoader {
     org.apache.iceberg.io.InputFile puffinFile = HadoopInputFile.fromLocation(
         statsFile.path(), FileSystemUtil.getConfiguration());
 
-    return Puffin.read(puffinFile)
+    // return Puffin.read(puffinFile)
+    //     .withFileSize(statsFile.fileSizeInBytes())
+    //     .withFooterSize(statsFile.fileFooterSizeInBytes())
+    //     .build();
+
+    // TODO: no need for logging?
+    PuffinReader res = Puffin.read(puffinFile)
         .withFileSize(statsFile.fileSizeInBytes())
         .withFooterSize(statsFile.fileFooterSizeInBytes())
         .build();
+    LOG.info("Created Puffin reader for file " + statsFile.path() + ".");
+    return res;
   }
 
   private static List<BlobMetadata> getBlobs(PuffinReader puffinReader,
